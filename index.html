@@ -197,9 +197,7 @@ document.addEventListener('input',e=>{
     const amt=document.getElementById('fAmt');
     if(amt)amt.value=q*p;
   }
-  if(e.target.id==='pSearch'){S.search=e.target.value.toLowerCase();R();
-    // Restore focus + cursor after re-render
-    setTimeout(()=>{const el=document.getElementById('pSearch');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}},0);}
+  if(e.target.id==='pSearch'){S.search=e.target.value.toLowerCase();clearTimeout(S._searchT);S._searchT=setTimeout(()=>{R();const el=document.getElementById('pSearch');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}},350);}
 });
 
 let _tt;function toast(m,t='s'){let e=document.querySelector('.toast');if(e)e.remove();e=document.createElement('div');e.className='toast '+(t==='e'?'te':t==='i'?'ti':'ts');e.textContent=m;document.body.appendChild(e);clearTimeout(_tt);_tt=setTimeout(()=>e.remove(),2500)}
