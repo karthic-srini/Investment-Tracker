@@ -146,23 +146,35 @@ tfoot td{padding:12px;border-top:2px solid rgba(245,158,11,.3);}
 <div id="app"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const SKEY='wv_inv_v3',KKEY='wv_sett_v3',MKEY='wv_theme',OW=['Self','Spouse'],
+const SKEY='wv_inv_v3',KKEY='wv_sett_v3',MKEY='wv_theme',VKEY='wv_vals_v1',OW=['Self','Spouse'],
 PC=['#FF6B4A','#2EC4F6','#7ED957','#FFB340','#A855F7','#FF5FA2','#38BDF8','#FB923C','#4ADE80','#818CF8','#F472B6','#22D3EE'],
 MOS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
 DS={exchangeRate:110,categories:{India:['Mutual Funds','Stocks','SGB','Govt Bonds','Corporate Bonds','RBI Gilt','ETFs','FD','RD','Debt'],UK:['Bank Savings','ISA - Cash','ISA - Stocks & Investments','Pension Account','Debt']},methods:['SIP','One-Time','Lumpsum','EMI'],funds:{'India::Debt':['Personal Loan','Home Loan / Mortgage','Car Loan','Education Loan','Credit Card','Gold Loan','Other Loan'],'UK::Debt':['Mortgage','Personal Loan','Car Finance','Student Loan','Credit Card','Other Loan']}};
 
-let S={inv:[],sett:structuredClone(DS),tab:'dashboard',drill:null,drillF:{year:'All',month:'All'},filters:{owner:'All',country:'All',category:'All',method:'All'},modal:null,edit:null,sTab:'general',mf:null,impM:'replace',lastOwner:'Self',lastCountry:'India',sortCol:'tot',sortDir:'desc'};
+let S={inv:[],vals:[],sett:structuredClone(DS),tab:'dashboard',drill:null,drillF:{year:'All',month:'All'},filters:{owner:'All',country:'All',category:'All',method:'All'},modal:null,edit:null,sTab:'general',mf:null,impM:'replace',lastOwner:'Self',lastCountry:'India',sortCol:'tot',sortDir:'desc',search:''};
 
 function load(){try{const d=localStorage.getItem(SKEY);if(d)S.inv=JSON.parse(d);}catch{}try{const s=localStorage.getItem(KKEY);if(s){const p=JSON.parse(s);S.sett={...DS,...p,categories:{...DS.categories,...p.categories},funds:{...DS.funds,...p.funds}};}}catch{}
+try{const v=localStorage.getItem(VKEY);if(v)S.vals=JSON.parse(v);}catch{}
 // Ensure Debt category exists + dedup all fund lists
 ['India','UK'].forEach(c=>{if(!S.sett.categories[c])S.sett.categories[c]=[];if(!S.sett.categories[c].includes('Debt'))S.sett.categories[c].push('Debt');const dk=`${c}::Debt`;if(!S.sett.funds[dk]||!S.sett.funds[dk].length)S.sett.funds[dk]=DS.funds[dk]||[];});
 Object.keys(S.sett.funds).forEach(k=>{S.sett.funds[k]=[...new Set(S.sett.funds[k])];});}
 function sI(){try{localStorage.setItem(SKEY,JSON.stringify(S.inv));}catch{}}
 function sS(){try{localStorage.setItem(KKEY,JSON.stringify(S.sett));}catch{}}
+function sV(){try{localStorage.setItem(VKEY,JSON.stringify(S.vals));}catch{}}
 function loadTheme(){try{const t=localStorage.getItem(MKEY);if(t==='light')document.documentElement.classList.add('light');}catch{}}
 function toggleTheme(){document.documentElement.classList.toggle('light');const isLight=document.documentElement.classList.contains('light');try{localStorage.setItem(MKEY,isLight?'light':'dark');}catch{}R();}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).substr(2,9)}
-function fmt(a,c){return c==='INR'?'₹'+Number(a).toLocaleString('en-IN',{maximumFractionDigits:0}):'£'+Number(a).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function fmt(a,c){
+  const n=Number(a);
+  if(c==='INR'){
+    const abs=Math.abs(n);
+    if(abs>=10000000)return(n<0?'−':'')+'₹'+(abs/10000000).toFixed(2).replace(/\.?0+$/,'')+'Cr';
+    if(abs>=100000)return(n<0?'−':'')+'₹'+(abs/100000).toFixed(2).replace(/\.?0+$/,'')+'L';
+    if(abs>=1000)return(n<0?'−':'')+'₹'+abs.toLocaleString('en-IN',{maximumFractionDigits:0});
+    return(n<0?'−':'')+'₹'+abs.toLocaleString('en-IN',{maximumFractionDigits:0});
+  }
+  return'£'+n.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
 function pD(v){if(!v)return null;if(v instanceof Date)return isNaN(v)?null:v;if(typeof v==='number')return new Date(new Date(1899,11,30).getTime()+v*86400000);const s=String(v).trim();let m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);if(m)return new Date(+m[3],+m[2]-1,+m[1]);m=s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);if(m)return new Date(+m[1],+m[2]-1,+m[3]);const d=new Date(s);return isNaN(d)?null:d}
 function toI(v){const d=pD(v);if(!d)return new Date().toISOString().slice(0,10);return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 function toD(v){const d=pD(v);if(!d)return'';return`${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`}
@@ -170,6 +182,12 @@ function gC(c){return[...new Set(S.sett.categories?.[c]||DS.categories[c]||[])].
 function gM(){return[...new Set(S.sett.methods||DS.methods)].sort((a,b)=>a.localeCompare(b))}
 function gF(c,k){return[...new Set(S.sett.funds?.[`${c}::${k}`]||[])].sort((a,b)=>a.localeCompare(b))}
 function isDebt(cat){return cat==='Debt';}
+function latestVal(){return S.vals.length?S.vals[S.vals.length-1]:null;}
+function getInvested(){
+  const m={};
+  S.inv.forEach(i=>{if(isDebt(i.category))return;const k=`${i.owner}::${i.country}::${i.category}`;m[k]=(m[k]||0)+i.amount;});
+  return m;
+}
 
 // Auto-calc for Stocks qty * price
 document.addEventListener('input',e=>{
@@ -179,6 +197,9 @@ document.addEventListener('input',e=>{
     const amt=document.getElementById('fAmt');
     if(amt)amt.value=q*p;
   }
+  if(e.target.id==='pSearch'){S.search=e.target.value.toLowerCase();R();
+    // Restore focus + cursor after re-render
+    setTimeout(()=>{const el=document.getElementById('pSearch');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}},0);}
 });
 
 let _tt;function toast(m,t='s'){let e=document.querySelector('.toast');if(e)e.remove();e=document.createElement('div');e.className='toast '+(t==='e'?'te':t==='i'?'ti':'ts');e.textContent=m;document.body.appendChild(e);clearTimeout(_tt);_tt=setTimeout(()=>e.remove(),2500)}
@@ -231,6 +252,7 @@ document.addEventListener('click',e=>{
   else if(a==='psort'){const col=t.dataset.col;if(S.sortCol===col)S.sortDir=S.sortDir==='asc'?'desc':'asc';else{S.sortCol=col;S.sortDir=col==='tot'||col==='n'?'desc':'asc';}R();}
   else if(a==='edit'){const it=S.inv.find(x=>x.id===t.dataset.id);if(it){S.edit=it;S.modal='form';R();}}
   else if(a==='del'){S.inv=S.inv.filter(x=>x.id!==t.dataset.id);sI();toast('Deleted','i');R();}
+  else if(a==='dup'){const it=S.inv.find(x=>x.id===t.dataset.id);if(it){S.edit={...it,id:undefined,date:new Date().toISOString().slice(0,10)};S.modal='form';R();}}
   else if(a==='stab'){S.sTab=t.dataset.v;R();}
   else if(a==='rcat'){const[c,...rest]=t.dataset.v.split('::');const cat=rest.join('::');S.sett.categories[c]=gC(c).filter(x=>x!==cat);sS();toast('Removed "'+cat+'"','i');R();}
   else if(a==='acat'){const c=t.dataset.v;const inp=document.getElementById('ac_'+c);const v=inp?.value.trim();if(v){if(!S.sett.categories[c])S.sett.categories[c]=[];if(!S.sett.categories[c].includes(v)){S.sett.categories[c].push(v);sS();toast('"'+v+'" added');R();}}}
@@ -241,9 +263,13 @@ document.addEventListener('click',e=>{
   else if(a==='afund'){const inp=document.getElementById('afIn');const v=inp?.value.trim();if(v&&S.mf){const k=`${S.mf.country}::${S.mf.category}`;if(!S.sett.funds[k])S.sett.funds[k]=[];if(!S.sett.funds[k].includes(v)){S.sett.funds[k].push(v);sS();toast('"'+v+'" added');R();}}}
   else if(a==='abulk'){const ta=document.getElementById('bulkIn');const raw=ta?.value||'';const names=raw.split(/[,\n]+/).map(s=>s.trim()).filter(Boolean);if(names.length&&S.mf){const k=`${S.mf.country}::${S.mf.category}`;if(!S.sett.funds[k])S.sett.funds[k]=[];let added=0;names.forEach(n=>{if(!S.sett.funds[k].includes(n)){S.sett.funds[k].push(n);added++;}});sS();toast(added+' fund'+(added!==1?'s':'')+' added');R();}}
   else if(a==='b2s'){S.modal='settings';S.sTab='funds';R();}
-  else if(a==='reset'){if(t.dataset.confirmed){S.inv=[];S.sett=structuredClone(DS);sI();sS();toast('Reset','i');closeM();}else{t.dataset.confirmed='1';t.innerHTML='⚠️ Tap again to confirm reset';t.style.borderColor='rgba(239,68,68,.6)';t.style.color='#fff';t.style.background='rgba(239,68,68,.15)';setTimeout(()=>{if(t){t.removeAttribute('data-confirmed');t.innerHTML='🗑 Reset All Data';t.style.borderColor='';t.style.color='';t.style.background='';}},3000);}}
+  else if(a==='reset'){if(t.dataset.confirmed){S.inv=[];S.vals=[];S.sett=structuredClone(DS);sI();sS();sV();toast('Reset','i');closeM();}else{t.dataset.confirmed='1';t.innerHTML='⚠️ Tap again to confirm reset';t.style.borderColor='rgba(239,68,68,.6)';t.style.color='#fff';t.style.background='rgba(239,68,68,.15)';setTimeout(()=>{if(t){t.removeAttribute('data-confirmed');t.innerHTML='🗑 Reset All Data';t.style.borderColor='';t.style.color='';t.style.background='';}},3000);}}
   else if(a==='exp'){doExp();}
   else if(a==='theme'){toggleTheme();}
+  else if(a==='openVals'){S.modal='valuations';R();}
+  else if(a==='saveVals'){saveValuation();}
+  else if(a==='openValHist'){S.modal='valHistory';R();}
+  else if(a==='delSnap'){const idx=+t.dataset.idx;S.vals.splice(idx,1);sV();R();}
   else if(a==='imp'){document.getElementById('impF')?.click();}
   else if(a==='impM'){S.impM=t.dataset.v;R();}
   else if(a==='jexp'){doJsonExp();}
@@ -361,8 +387,32 @@ function doImp(e){
   reader.readAsArrayBuffer(file);
 }
 
+function saveValuation(){
+  const invested=getInvested();
+  const keys=Object.keys(invested);
+  const values={};
+  let anyFilled=false;
+  keys.forEach(k=>{
+    const inp=document.getElementById('val_'+k.replace(/[^a-zA-Z0-9]/g,'_'));
+    if(inp&&inp.value!==''){values[k]=Number(inp.value);anyFilled=true;}
+  });
+  if(!anyFilled){toast('Enter at least one current value','e');return;}
+  // If user left some blank, carry forward from latest snapshot or use invested
+  const prev=latestVal();
+  keys.forEach(k=>{if(values[k]===undefined){values[k]=prev?.values?.[k]??invested[k];}});
+  const dateInp=document.getElementById('valDate');
+  const date=dateInp?dateInp.value:new Date().toISOString().slice(0,10);
+  // Remove existing snapshot for same date (replace)
+  S.vals=S.vals.filter(v=>v.date!==date);
+  S.vals.push({date,ts:Date.now(),values});
+  S.vals.sort((a,b)=>a.date.localeCompare(b.date));
+  sV();
+  toast('Values saved for '+date);
+  closeM();
+}
+
 function doJsonExp(){
-  const backup={v:3,ts:Date.now(),inv:S.inv,sett:S.sett};
+  const backup={v:3,ts:Date.now(),inv:S.inv,sett:S.sett,vals:S.vals};
   const blob=new Blob([JSON.stringify(backup)],{type:'application/json'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
@@ -378,6 +428,7 @@ function doJsonImp(e){
       const backup=JSON.parse(ev.target.result);
       if(!backup.inv||!Array.isArray(backup.inv))throw new Error('Invalid backup file');
       S.inv=backup.inv;sI();
+      if(backup.vals){S.vals=backup.vals;sV();}
       if(backup.sett){S.sett={...DS,...backup.sett,categories:{...DS.categories,...backup.sett.categories},funds:{...DS.funds,...backup.sett.funds}};sS();}
       ['India','UK'].forEach(c=>{if(!S.sett.categories[c])S.sett.categories[c]=[];if(!S.sett.categories[c].includes('Debt'))S.sett.categories[c].push('Debt');});
       toast('Restored '+S.inv.length+' investments');R();
@@ -402,21 +453,37 @@ function R(){
 }
 
 function renderHdr(){
-  return`<header class="hdr"><div class="hdr-in"><div class="logo"><div class="logo-i">W</div><div><h1>WealthView</h1><p>Investment Tracker · v2.2</p></div></div><button class="ibtn" data-a="sett">⚙️</button></div>
+  return`<header class="hdr"><div class="hdr-in"><div class="logo"><div class="logo-i">W</div><div><h1>WealthView</h1><p>Investment Tracker · v2.3</p></div></div><button class="ibtn" data-a="sett">⚙️</button></div>
   <div class="tabs">${['dashboard','portfolio','sync'].map(t=>{const ic={dashboard:'📊',portfolio:'💼',sync:'🔄'};const lb={dashboard:'Dashboard',portfolio:'Portfolio',sync:'Sync'};return`<button class="tbtn ${S.tab===t?'on':''}" data-a="tab" data-v="${t}">${ic[t]} <span class="tl">${lb[t]}</span></button>`;}).join('')}</div></header>`;
 }
 
 function renderDash(){
   const rate=S.sett.exchangeRate||110;
   const ti=(a,c)=>c==='GBP'?a*rate:a;
-  const bo={};OW.forEach(o=>{bo[o]={assets:0,debts:0,bc:{},dc:{},by:{India:0,UK:0}};});
-  S.inv.forEach(i=>{if(!bo[i.owner])bo[i.owner]={assets:0,debts:0,bc:{},dc:{},by:{India:0,UK:0}};const v=ti(i.amount,i.currency);if(isDebt(i.category)){bo[i.owner].debts+=v;bo[i.owner].dc[i.fundName]=(bo[i.owner].dc[i.fundName]||0)+v;}else{bo[i.owner].assets+=v;bo[i.owner].bc[i.category]=(bo[i.owner].bc[i.category]||0)+v;bo[i.owner].by[i.country]=(bo[i.owner].by[i.country]||0)+v;}});
+  const bo={};OW.forEach(o=>{bo[o]={assets:0,debts:0,bc:{},dc:{},by:{India:0,UK:0},catKey:{}};});
+  S.inv.forEach(i=>{if(!bo[i.owner])bo[i.owner]={assets:0,debts:0,bc:{},dc:{},by:{India:0,UK:0},catKey:{}};const v=ti(i.amount,i.currency);if(isDebt(i.category)){bo[i.owner].debts+=v;bo[i.owner].dc[i.fundName]=(bo[i.owner].dc[i.fundName]||0)+v;}else{bo[i.owner].assets+=v;bo[i.owner].bc[i.category]=(bo[i.owner].bc[i.category]||0)+v;bo[i.owner].by[i.country]=(bo[i.owner].by[i.country]||0)+v;const ck=`${i.owner}::${i.country}::${i.category}`;bo[i.owner].catKey[ck]=(bo[i.owner].catKey[ck]||0)+i.amount;}});
   const ga=Object.values(bo).reduce((s,o)=>s+o.assets,0);
   const gd=Object.values(bo).reduce((s,o)=>s+o.debts,0);
   const gt=ga-gd;
   if(S.inv.length===0)return`<div class="empty"><div class="ei">📭</div><h3>No investments yet</h3><p>Head to Portfolio to add your first one</p></div>`;
 
-  let o=`<div class="hero"><div class="hl">Net Worth</div><div class="ha">${fmt(gt,'INR')}</div><div class="hpills"><span class="hp">📈 Assets: ${fmt(ga,'INR')}</span>${gd>0?`<span class="hp" style="background:rgba(239,68,68,.25);color:#fca5a5">📉 Debt: ${fmt(gd,'INR')}</span>`:''}<span class="hp">${S.inv.length} entries</span><span class="hp">1 GBP = ₹${rate}</span></div></div>`;
+  // P&L from latest valuation
+  const lv=latestVal();
+  let heroExtra='';
+  if(lv){
+    const invested=getInvested();
+    let totalCur=0;
+    Object.keys(invested).forEach(k=>{const[,country]=k.split('::');const cur=country==='India'?'INR':'GBP';totalCur+=ti(lv.values?.[k]??invested[k],cur);});
+    const marketNet=totalCur-gd;
+    const pnl=totalCur-ga;
+    const pnlPct=ga?((pnl/ga)*100).toFixed(1):0;
+    const isUp=pnl>=0;
+    heroExtra=`<span class="hp">📊 Market: ${fmt(totalCur,'INR')}</span><span class="hp" style="background:${isUp?'rgba(16,185,129,.25)':'rgba(239,68,68,.25)'};color:${isUp?'#6ee7b7':'#fca5a5'}">P&L: ${isUp?'+':''}${fmt(pnl,'INR')} (${isUp?'+':''}${pnlPct}%)</span>`;
+  }
+
+  let o=`<div class="hero"><div class="hl">Net Worth (Invested)</div><div class="ha">${fmt(gt,'INR')}</div><div class="hpills"><span class="hp">📈 Assets: ${fmt(ga,'INR')}</span>${gd>0?`<span class="hp" style="background:rgba(239,68,68,.25);color:#fca5a5">📉 Debt: ${fmt(gd,'INR')}</span>`:''}<span class="hp">${S.inv.length} entries</span><span class="hp">1 GBP = ₹${rate}</span>${heroExtra}${lv?`<span class="hp">📊 As of: ${lv.date}</span>`:''}</div></div>`;
+
+  o+=`<div style="display:flex;gap:10px;margin-bottom:16px"><button class="bp" style="flex:1" data-a="openVals">📊 Update Values</button>${S.vals.length?`<button class="bg" data-a="openValHist">📈 History (${S.vals.length})</button>`:''}</div>`;
 
   OW.forEach(ow=>{
     const d=bo[ow];if(!d||d.assets+d.debts===0)return;
@@ -428,7 +495,28 @@ function renderDash(){
 
     o+=`<div class="card"><div class="chd"><div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px"><div><div class="fl" style="margin:0">${ow}</div><div style="font-size:22px;font-weight:800;margin-top:2px">${fmt(net,'INR')}</div><div style="font-size:12px;margin-top:4px;display:flex;gap:12px;flex-wrap:wrap"><span style="color:var(--green)">Assets: ${fmt(d.assets,'INR')}</span>${d.debts>0?`<span style="color:var(--red)">Debt: −${fmt(d.debts,'INR')}</span>`:''}</div></div><div style="display:flex;gap:16px">${cyH}</div></div></div>`;
 
-    if(cd.length){o+=`<div class="cbd" style="border-bottom:${dd.length?'1px solid var(--brd)':'none'}"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--green);margin-bottom:10px">Assets by Category</div><div style="display:flex;align-items:center;gap:16px"><div style="flex-shrink:0;width:140px">${svgPie(cd)}</div><div style="flex:1;min-width:0;overflow-y:auto;max-height:180px">${pieLegend(cd)}</div></div></div>`;}
+    if(cd.length){
+      o+=`<div class="cbd" style="border-bottom:${dd.length?'1px solid var(--brd)':'none'}"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--green);margin-bottom:10px">Assets by Category</div><div style="display:flex;align-items:center;gap:16px"><div style="flex-shrink:0;width:140px">${svgPie(cd)}</div><div style="flex:1;min-width:0;overflow-y:auto;max-height:180px">${pieLegend(cd)}</div></div>`;
+      // Show P&L per category if valuation exists
+      if(lv){
+        const catPnl=Object.entries(d.catKey).map(([k,inv])=>{
+          const[,country,category]=k.split('::');
+          const cur=country==='India'?'INR':'GBP';
+          const cv=lv.values?.[k];
+          if(cv===undefined)return null;
+          const diff=cv-inv;const pct=inv?((diff/inv)*100).toFixed(1):0;
+          return{category,country,inv,cv,diff,pct,cur,up:diff>=0};
+        }).filter(Boolean);
+        if(catPnl.length){
+          o+=`<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--brd)"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t25);margin-bottom:6px">P&L by Category · ${lv.date}</div>`;
+          catPnl.forEach(p=>{
+            o+=`<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--t60)">${p.country==='India'?'🇮🇳':'🇬🇧'} ${p.category}</span><span class="mono" style="font-weight:700;color:${p.up?'var(--green)':'var(--red)'}">${p.up?'+':''}${fmt(p.diff,p.cur)} (${p.up?'+':''}${p.pct}%)</span></div>`;
+          });
+          o+=`</div>`;
+        }
+      }
+      o+=`</div>`;
+    }
     if(dd.length){o+=`<div class="cbd"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--red);margin-bottom:10px">Debt Breakdown</div>${dd.map(d=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--brd)"><span style="font-size:13px;color:var(--t60)">${d.name}</span><span class="mono" style="font-size:13px;font-weight:700;color:var(--red)">−${fmt(d.value,'INR')}</span></div>`).join('')}</div>`;}
     o+=`</div>`;
   });
@@ -439,8 +527,10 @@ function renderPort(){
   const allCats=[...new Set([...gC('India'),...gC('UK')])].sort((a,b)=>a.localeCompare(b));
   const fls=[{k:'owner',o:['All',...OW],l:'Owners'},{k:'country',o:['All','India','UK'],l:'Countries'},{k:'category',o:['All',...allCats],l:'Categories'},{k:'method',o:['All',...gM()],l:'Methods'}];
   let o=`<div class="fbar">${fls.map(f=>`<select class="fsel" data-a="flt" data-k="${f.k}">${f.o.map(v=>`<option value="${v}" ${S.filters[f.k]===v?'selected':''}>${v==='All'?'All '+f.l:v}</option>`).join('')}</select>`).join('')}<div class="spacer"></div><button class="bp bs" data-a="add">+ Add</button></div>`;
+  o+=`<div style="margin-bottom:12px"><input class="fi" id="pSearch" value="${S.search}" placeholder="🔍 Search fund or stock name..." style="font-size:13px;padding:10px 14px"></div>`;
 
-  const filtered=S.inv.filter(i=>(S.filters.owner==='All'||i.owner===S.filters.owner)&&(S.filters.country==='All'||i.country===S.filters.country)&&(S.filters.category==='All'||i.category===S.filters.category)&&(S.filters.method==='All'||i.method===S.filters.method));
+  let filtered=S.inv.filter(i=>(S.filters.owner==='All'||i.owner===S.filters.owner)&&(S.filters.country==='All'||i.country===S.filters.country)&&(S.filters.category==='All'||i.category===S.filters.category)&&(S.filters.method==='All'||i.method===S.filters.method));
+  if(S.search){filtered=filtered.filter(i=>i.fundName.toLowerCase().includes(S.search));}
   const gMap={};filtered.forEach(i=>{const k=`${i.owner}||${i.country}||${i.category}||${i.fundName}`;if(!gMap[k])gMap[k]={...i,tot:0,n:0};gMap[k].tot+=i.amount;gMap[k].n+=1;});
   _grps=Object.values(gMap);
 
@@ -456,16 +546,19 @@ function renderPort(){
     return(b.tot-a.tot);
   });
 
-  if(!_grps.length)return o+`<div class="empty"><div class="ei">💼</div><h3>No investments found</h3><p>Add your first investment to begin</p></div>`;
+  if(!_grps.length)return o+`<div class="empty"><div class="ei">💼</div><h3>No investments found</h3><p>${S.search?'No matches for "'+S.search+'"':'Add your first investment to begin'}</p></div>`;
 
   const si=c=>S.sortCol===c?(S.sortDir==='asc'?' ▲':' ▼'):'';
   const sh=(label,col,cls)=>`<th class="${cls}" data-a="psort" data-col="${col}" style="cursor:pointer;user-select:none">${label}${si(col)}</th>`;
   o+=`<div class="card"><div class="tw"><table><thead><tr>${sh('Fund / Stock','fundName','')}${sh('Owner','owner','hm')}${sh('Category','category','hm')}${sh('Method','method','hm')}${sh('Total','tot','tr')}${sh('#','n','tc')}</tr></thead><tbody>`;
+  let grandTot=0,grandN=0;
   _grps.forEach((g,i)=>{
     const mp=g.method==='SIP'?'ps':'po';const fl=g.country==='India'?'🇮🇳':'🇬🇧';
-    o+=`<tr data-a="drill" data-i="${i}"><td><div style="font-weight:600">${g.fundName}</div><div style="font-size:11px;color:var(--t25)">${fl} ${g.country}${isDebt(g.category)?' · 🔴 Debt':''}${g.method==='SIP'&&g.sipAmount?' · SIP '+fmt(g.sipAmount,g.currency)+'/mo':''}</div></td><td class="hm" style="color:var(--t60)">${g.owner}</td><td class="hm"><span class="pill ${isDebt(g.category)?'pd':'pm'}">${g.category}</span></td><td class="hm"><span class="pill ${mp}">${g.method}</span></td><td class="tr mono" style="font-weight:700;color:${isDebt(g.category)?'var(--red)':'var(--amber)'}">${isDebt(g.category)?'−':''}${fmt(g.tot,g.currency)}</td><td class="tc" style="color:var(--t40)">${g.n}</td></tr>`;
+    const sign=isDebt(g.category)?-1:1;
+    grandTot+=g.tot*sign;grandN+=g.n;
+    o+=`<tr data-a="drill" data-i="${i}"><td><div style="font-weight:600">${g.fundName}</div><div style="font-size:11px;color:var(--t25)">${g.owner} · ${fl} ${g.country}${isDebt(g.category)?' · 🔴 Debt':''}${g.method==='SIP'&&g.sipAmount?' · SIP '+fmt(g.sipAmount,g.currency)+'/mo':''}</div></td><td class="hm" style="color:var(--t60)">${g.owner}</td><td class="hm"><span class="pill ${isDebt(g.category)?'pd':'pm'}">${g.category}</span></td><td class="hm"><span class="pill ${mp}">${g.method}</span></td><td class="tr mono" style="font-weight:700;color:${isDebt(g.category)?'var(--red)':'var(--amber)'}">${isDebt(g.category)?'−':''}${fmt(g.tot,g.currency)}</td><td class="tc" style="color:var(--t40)">${g.n}</td></tr>`;
   });
-  o+=`</tbody></table></div></div>`;
+  o+=`</tbody><tfoot><tr style="border-top:2px solid var(--brd2)"><td style="padding:12px;font-weight:700;font-size:13px">${_grps.length} group${_grps.length!==1?'s':''}</td><td class="hm"></td><td class="hm"></td><td class="hm"></td><td class="tr mono" style="padding:12px;font-weight:800;font-size:14px;color:var(--amber)">${fmt(grandTot,'INR')}</td><td class="tc" style="padding:12px;font-weight:700;color:var(--t40)">${grandN}</td></tr></tfoot></table></div></div>`;
   return o;
 }
 
@@ -488,7 +581,7 @@ function renderDrill(){
     o+=`<div class="tw"><table><thead><tr><th>Date</th>${isStk?'<th class="tr hm">Qty</th><th class="tr hm">Price</th>':''}<th class="tr">Amount</th><th>Method</th><th class="hm">Notes</th><th class="tr">Action</th></tr></thead><tbody>`;
     data.forEach(iv=>{
       const mp=iv.method==='SIP'?'ps':'po';
-      o+=`<tr style="cursor:default"><td style="color:var(--t60)">${toD(iv.date)}</td>${isStk?`<td class="tr hm mono" style="color:var(--t60)">${iv.qty||'—'}</td><td class="tr hm mono" style="color:var(--t60)">${iv.buyPrice?fmt(iv.buyPrice,iv.currency):'—'}</td>`:''}<td class="tr mono" style="font-weight:700;color:${amtColor}">${isDbt?'−':''}${fmt(iv.amount,iv.currency)}</td><td><span class="pill ${mp}">${iv.method}</span></td><td class="hm" style="color:var(--t25);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${iv.notes||'—'}</td><td class="tr"><button class="bd" style="display:inline-flex;padding:4px 10px;min-height:32px;min-width:40px;border:none;color:var(--amber)" data-a="edit" data-id="${iv.id}">Edit</button> <button class="bd" style="display:inline-flex;padding:4px 10px;min-height:32px;min-width:40px;border:none" data-a="del" data-id="${iv.id}">Del</button></td></tr>`;
+      o+=`<tr style="cursor:default"><td style="color:var(--t60)">${toD(iv.date)}</td>${isStk?`<td class="tr hm mono" style="color:var(--t60)">${iv.qty||'—'}</td><td class="tr hm mono" style="color:var(--t60)">${iv.buyPrice?fmt(iv.buyPrice,iv.currency):'—'}</td>`:''}<td class="tr mono" style="font-weight:700;color:${amtColor}">${isDbt?'−':''}${fmt(iv.amount,iv.currency)}</td><td><span class="pill ${mp}">${iv.method}</span></td><td class="hm" style="color:var(--t25);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${iv.notes||'—'}</td><td class="tr" style="white-space:nowrap"><button class="bd" style="display:inline-flex;padding:4px 10px;min-height:32px;min-width:40px;border:none;color:var(--blue)" data-a="dup" data-id="${iv.id}" title="Duplicate">⧉</button><button class="bd" style="display:inline-flex;padding:4px 10px;min-height:32px;min-width:40px;border:none;color:var(--amber)" data-a="edit" data-id="${iv.id}">Edit</button><button class="bd" style="display:inline-flex;padding:4px 10px;min-height:32px;min-width:40px;border:none" data-a="del" data-id="${iv.id}">Del</button></td></tr>`;
     });
     o+=`</tbody><tfoot><tr><td style="font-weight:700">Total</td>${isStk?'<td class="hm"></td><td class="hm"></td>':''}<td class="tr mono" style="font-weight:800;color:${amtColor}">${isDbt?'−':''}${fmt(total,cur)}</td><td colspan="3"></td></tr></tfoot></table></div>`;
   }else{o+=`<div class="empty" style="padding:40px"><p>No entries match these filters.</p></div>`;}
@@ -509,13 +602,79 @@ function renderSync(){
 }
 
 function renderModal(){
-  const wide=S.modal==='settings'||S.modal==='funds';
-  const titles={form:S.edit?.id?'Edit Investment':'Add Investment',settings:'Settings',funds:S.mf?`${S.mf.category} — ${S.mf.country}`:'Funds'};
+  const wide=S.modal==='settings'||S.modal==='funds'||S.modal==='valuations'||S.modal==='valHistory';
+  const titles={form:S.edit?.id?'Edit Investment':'Add Investment',settings:'Settings',funds:S.mf?`${S.mf.category} — ${S.mf.country}`:'Funds',valuations:'📊 Update Current Values',valHistory:'📈 Value History'};
   let body='';
   if(S.modal==='form')body=renderForm();
   else if(S.modal==='settings')body=renderSett();
   else if(S.modal==='funds')body=renderFunds();
+  else if(S.modal==='valuations')body=renderValuations();
+  else if(S.modal==='valHistory')body=renderValHistory();
   return`<div class="mo open"><div class="ml ${wide?'wide':''}"><div class="mh"><h2>${titles[S.modal]||''}</h2><button class="ibtn" data-a="close">✕</button></div><div class="mb">${body}</div></div></div>`;
+}
+
+function renderValuations(){
+  const invested=getInvested();
+  const keys=Object.keys(invested).sort();
+  if(!keys.length)return`<div class="empty" style="padding:30px"><p>No investments to value yet. Add investments first.</p></div>`;
+  const prev=latestVal();
+  const today=new Date().toISOString().slice(0,10);
+  let o=`<p style="font-size:13px;color:var(--t40);margin-bottom:12px">Enter the current market value for each category. Leave blank to carry forward the previous value.</p>`;
+  o+=`<div style="margin-bottom:16px"><label class="fl">Date</label><input class="fi" type="date" id="valDate" value="${today}"></div>`;
+  o+=`<div style="border:1px solid var(--brd);border-radius:12px;overflow:hidden">`;
+  o+=`<div style="display:grid;grid-template-columns:1fr 100px 120px;gap:0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t25);padding:10px 14px;border-bottom:1px solid var(--brd)"><div>Category</div><div class="tr">Invested</div><div class="tr">Current Value</div></div>`;
+  let lastOwner='';
+  keys.forEach(k=>{
+    const[owner,country,category]=k.split('::');
+    const cur=country==='India'?'INR':'GBP';
+    const inv=invested[k];
+    const prevVal=prev?.values?.[k];
+    const safeId='val_'+k.replace(/[^a-zA-Z0-9]/g,'_');
+    const fl=country==='India'?'🇮🇳':'🇬🇧';
+    if(owner!==lastOwner){o+=`<div style="padding:8px 14px;font-size:11px;font-weight:700;color:var(--amber);background:var(--card);border-bottom:1px solid var(--brd)">${owner}</div>`;lastOwner=owner;}
+    o+=`<div style="display:grid;grid-template-columns:1fr 100px 120px;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--brd)">`;
+    o+=`<div><div style="font-size:13px;font-weight:600">${fl} ${category}</div></div>`;
+    o+=`<div class="tr mono" style="font-size:12px;font-weight:600;color:var(--t60)">${fmt(inv,cur)}</div>`;
+    o+=`<div><input class="fi" type="number" id="${safeId}" value="${prevVal!==undefined?prevVal:''}" placeholder="${fmt(inv,cur)}" min="0" step="any" style="font-size:13px;padding:8px 10px;text-align:right"></div>`;
+    o+=`</div>`;
+  });
+  o+=`</div>`;
+  o+=`<div class="brow"><button class="bp" data-a="saveVals">💾 Save Snapshot</button><button class="bg" data-a="openValHist">📈 History</button></div>`;
+  return o;
+}
+
+function renderValHistory(){
+  if(!S.vals.length)return`<div class="empty" style="padding:30px"><p>No snapshots yet. Update values from the dashboard to create your first snapshot.</p></div><div style="margin-top:16px"><button class="bg" style="width:100%" data-a="openVals">← Update Values</button></div>`;
+  const invested=getInvested();
+  const rate=S.sett.exchangeRate||110;
+  const ti=(a,c)=>c==='GBP'?a*rate:a;
+  let o=`<p style="font-size:13px;color:var(--t40);margin-bottom:14px">${S.vals.length} snapshot${S.vals.length!==1?'s':''} recorded</p>`;
+
+  // Show snapshots newest first
+  const sorted=[...S.vals].reverse();
+  sorted.forEach((snap,ri)=>{
+    const idx=S.vals.length-1-ri;
+    const keys=Object.keys(snap.values).sort();
+    let totalInv=0,totalCur=0;
+    keys.forEach(k=>{const[,country]=k.split('::');const cur=country==='India'?'INR':'GBP';totalInv+=ti(invested[k]||0,cur);totalCur+=ti(snap.values[k]||0,cur);});
+    const pnl=totalCur-totalInv;
+    const pnlPct=totalInv?((pnl/totalInv)*100).toFixed(1):0;
+    const isUp=pnl>=0;
+    o+=`<div class="card"><div class="chd" style="padding:14px 20px"><div style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:14px;font-weight:700">${snap.date}</div><div style="font-size:12px;color:var(--t40);margin-top:2px">Invested: ${fmt(totalInv,'INR')} → Current: ${fmt(totalCur,'INR')}</div></div><div style="text-align:right"><div class="mono" style="font-size:15px;font-weight:800;color:${isUp?'var(--green)':'var(--red)'}">${isUp?'+':''}${fmt(pnl,'INR')}</div><div style="font-size:11px;color:${isUp?'var(--green)':'var(--red)'}">${isUp?'▲':'▼'} ${Math.abs(pnlPct)}%</div></div></div></div>`;
+    o+=`<div class="cbd" style="padding:10px 20px">`;
+    keys.forEach(k=>{
+      const[owner,country,category]=k.split('::');
+      const cur=country==='India'?'INR':'GBP';
+      const inv=invested[k]||0;
+      const cv=snap.values[k]||0;
+      const d=cv-inv;const dp=inv?((d/inv)*100).toFixed(1):0;
+      const up=d>=0;
+      o+=`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--brd);font-size:12px"><div style="color:var(--t60)">${owner} · ${country==='India'?'🇮🇳':'🇬🇧'} ${category}</div><div style="display:flex;gap:12px;align-items:center"><span class="mono" style="color:var(--t40)">${fmt(cv,cur)}</span><span class="mono" style="font-weight:700;color:${up?'var(--green)':'var(--red)'}">${up?'+':''}${fmt(d,cur)} (${up?'+':''}${dp}%)</span></div></div>`;
+    });
+    o+=`<div style="margin-top:8px;text-align:right"><button class="bd" style="font-size:11px;padding:4px 10px;min-height:28px" data-a="delSnap" data-idx="${idx}">Delete</button></div></div></div>`;
+  });
+  o+=`<div style="margin-top:8px"><button class="bg" style="width:100%" data-a="openVals">← Update Values</button></div>`;
+  return o;
 }
 
 function renderForm(){
