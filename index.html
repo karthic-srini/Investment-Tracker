@@ -146,12 +146,12 @@ tfoot td{padding:12px;border-top:2px solid rgba(245,158,11,.3);}
 <div id="app"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const SKEY='wv_inv_v3',KKEY='wv_sett_v3',MKEY='wv_theme',VKEY='wv_vals_v1',OW=['Self','Spouse'],
+const SKEY='wv_inv_v3',KKEY='wv_sett_v3',MKEY='wv_theme',VKEY='wv_vals_v1',HKEY='wv_hide',OW=['Self','Spouse'],
 PC=['#FF6B4A','#2EC4F6','#7ED957','#FFB340','#A855F7','#FF5FA2','#38BDF8','#FB923C','#4ADE80','#818CF8','#F472B6','#22D3EE'],
 MOS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
 DS={exchangeRate:110,categories:{India:['Mutual Funds','Stocks','SGB','Govt Bonds','Corporate Bonds','RBI Gilt','ETFs','FD','RD','Debt'],UK:['Bank Savings','ISA - Cash','ISA - Stocks & Investments','Pension Account','Debt']},methods:['SIP','One-Time','Lumpsum','EMI'],funds:{'India::Debt':['Personal Loan','Home Loan / Mortgage','Car Loan','Education Loan','Credit Card','Gold Loan','Other Loan'],'UK::Debt':['Mortgage','Personal Loan','Car Finance','Student Loan','Credit Card','Other Loan']}};
 
-let S={inv:[],vals:[],sett:structuredClone(DS),tab:'dashboard',drill:null,drillF:{year:'All',month:'All'},filters:{owner:'All',country:'All',category:'All',method:'All'},modal:null,edit:null,sTab:'general',mf:null,impM:'replace',lastOwner:'Self',lastCountry:'India',sortCol:'tot',sortDir:'desc',search:''};
+let S={inv:[],vals:[],sett:structuredClone(DS),tab:'dashboard',drill:null,drillF:{year:'All',month:'All'},filters:{owner:'All',country:'All',category:'All',method:'All'},modal:null,edit:null,sTab:'general',mf:null,impM:'replace',lastOwner:'Self',lastCountry:'India',sortCol:'tot',sortDir:'desc',search:'',hide:false};
 
 function load(){try{const d=localStorage.getItem(SKEY);if(d)S.inv=JSON.parse(d);}catch{}try{const s=localStorage.getItem(KKEY);if(s){const p=JSON.parse(s);S.sett={...DS,...p,categories:{...DS.categories,...p.categories},funds:{...DS.funds,...p.funds}};}}catch{}
 try{const v=localStorage.getItem(VKEY);if(v)S.vals=JSON.parse(v);}catch{}
@@ -163,8 +163,11 @@ function sS(){try{localStorage.setItem(KKEY,JSON.stringify(S.sett));}catch{}}
 function sV(){try{localStorage.setItem(VKEY,JSON.stringify(S.vals));}catch{}}
 function loadTheme(){try{const t=localStorage.getItem(MKEY);if(t==='light')document.documentElement.classList.add('light');}catch{}}
 function toggleTheme(){document.documentElement.classList.toggle('light');const isLight=document.documentElement.classList.contains('light');try{localStorage.setItem(MKEY,isLight?'light':'dark');}catch{}R();}
+function loadHide(){try{S.hide=localStorage.getItem(HKEY)==='1';}catch{}}
+function toggleHide(){S.hide=!S.hide;try{localStorage.setItem(HKEY,S.hide?'1':'0');}catch{}R();}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).substr(2,9)}
 function fmt(a,c){
+  if(S.hide)return c==='INR'?'₹ ****':'£ ****';
   const n=Number(a);
   if(c==='INR'){
     const abs=Math.abs(n);
@@ -264,6 +267,7 @@ document.addEventListener('click',e=>{
   else if(a==='reset'){if(t.dataset.confirmed){S.inv=[];S.vals=[];S.sett=structuredClone(DS);sI();sS();sV();toast('Reset','i');closeM();}else{t.dataset.confirmed='1';t.innerHTML='⚠️ Tap again to confirm reset';t.style.borderColor='rgba(239,68,68,.6)';t.style.color='#fff';t.style.background='rgba(239,68,68,.15)';setTimeout(()=>{if(t){t.removeAttribute('data-confirmed');t.innerHTML='🗑 Reset All Data';t.style.borderColor='';t.style.color='';t.style.background='';}},3000);}}
   else if(a==='exp'){doExp();}
   else if(a==='theme'){toggleTheme();}
+  else if(a==='hide'){toggleHide();}
   else if(a==='openVals'){S.modal='valuations';R();}
   else if(a==='saveVals'){saveValuation();}
   else if(a==='openValHist'){S.modal='valHistory';R();}
@@ -451,7 +455,7 @@ function R(){
 }
 
 function renderHdr(){
-  return`<header class="hdr"><div class="hdr-in"><div class="logo"><div class="logo-i">W</div><div><h1>WealthView</h1><p>Investment Tracker · v2.3</p></div></div><button class="ibtn" data-a="sett">⚙️</button></div>
+  return`<header class="hdr"><div class="hdr-in"><div class="logo"><div class="logo-i">W</div><div><h1>WealthView</h1><p>Investment Tracker · v2.3</p></div></div><div style="display:flex;gap:6px"><button class="ibtn" data-a="hide" title="Toggle amounts">${S.hide?'🙈':'👁️'}</button><button class="ibtn" data-a="sett">⚙️</button></div></div>
   <div class="tabs">${['dashboard','portfolio','sync'].map(t=>{const ic={dashboard:'📊',portfolio:'💼',sync:'🔄'};const lb={dashboard:'Dashboard',portfolio:'Portfolio',sync:'Sync'};return`<button class="tbtn ${S.tab===t?'on':''}" data-a="tab" data-v="${t}">${ic[t]} <span class="tl">${lb[t]}</span></button>`;}).join('')}</div></header>`;
 }
 
@@ -744,7 +748,7 @@ function renderFunds(){
   return o;
 }
 
-load();loadTheme();R();
+load();loadTheme();loadHide();R();
 </script>
 </body>
 </html>
