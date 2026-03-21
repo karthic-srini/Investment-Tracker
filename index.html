@@ -146,21 +146,60 @@ tfoot td{padding:12px;border-top:2px solid rgba(245,158,11,.3);}
 <div id="app"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const SKEY='wv_inv_v3',KKEY='wv_sett_v3',MKEY='wv_theme',VKEY='wv_vals_v1',HKEY='wv_hide',OW=['Self','Spouse'],
+const SKEY='wv_inv_v3',KKEY='wv_sett_v3',MKEY='wv_theme',VKEY='wv_vals_v1',HKEY='wv_hide',PKEY='wv_sips_v1',OW=['Self','Spouse'],
 PC=['#FF6B4A','#2EC4F6','#7ED957','#FFB340','#A855F7','#FF5FA2','#38BDF8','#FB923C','#4ADE80','#818CF8','#F472B6','#22D3EE'],
 MOS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
 DS={exchangeRate:110,categories:{India:['Mutual Funds','Stocks','SGB','Govt Bonds','Corporate Bonds','RBI Gilt','ETFs','FD','RD','Debt'],UK:['Bank Savings','ISA - Cash','ISA - Stocks & Investments','Pension Account','Debt']},methods:['SIP','One-Time','Lumpsum','EMI'],funds:{'India::Debt':['Personal Loan','Home Loan / Mortgage','Car Loan','Education Loan','Credit Card','Gold Loan','Other Loan'],'UK::Debt':['Mortgage','Personal Loan','Car Finance','Student Loan','Credit Card','Other Loan']}};
 
-let S={inv:[],vals:[],sett:structuredClone(DS),tab:'dashboard',drill:null,drillF:{year:'All',month:'All'},filters:{owner:'All',country:'All',category:'All',method:'All'},modal:null,edit:null,sTab:'general',mf:null,impM:'replace',lastOwner:'Self',lastCountry:'India',sortCol:'tot',sortDir:'desc',search:'',hide:false};
+let S={inv:[],vals:[],sips:[],sett:structuredClone(DS),tab:'dashboard',drill:null,drillF:{year:'All',month:'All'},filters:{owner:'All',country:'All',category:'All',method:'All'},modal:null,edit:null,sTab:'general',mf:null,impM:'replace',lastOwner:'Self',lastCountry:'India',sortCol:'tot',sortDir:'desc',search:'',hide:false,pendingSips:[]};
 
 function load(){try{const d=localStorage.getItem(SKEY);if(d)S.inv=JSON.parse(d);}catch{}try{const s=localStorage.getItem(KKEY);if(s){const p=JSON.parse(s);S.sett={...DS,...p,categories:{...DS.categories,...p.categories},funds:{...DS.funds,...p.funds}};}}catch{}
 try{const v=localStorage.getItem(VKEY);if(v)S.vals=JSON.parse(v);}catch{}
+try{const p=localStorage.getItem(PKEY);if(p)S.sips=JSON.parse(p);}catch{}
 // Ensure Debt category exists + dedup all fund lists
 ['India','UK'].forEach(c=>{if(!S.sett.categories[c])S.sett.categories[c]=[];if(!S.sett.categories[c].includes('Debt'))S.sett.categories[c].push('Debt');const dk=`${c}::Debt`;if(!S.sett.funds[dk]||!S.sett.funds[dk].length)S.sett.funds[dk]=DS.funds[dk]||[];});
-Object.keys(S.sett.funds).forEach(k=>{S.sett.funds[k]=[...new Set(S.sett.funds[k])];});}
+Object.keys(S.sett.funds).forEach(k=>{S.sett.funds[k]=[...new Set(S.sett.funds[k])];});
+// Migrate old sipAmount/sipDate entries to SIP masters
+migrateSips();}
+function migrateSips(){
+  if(S.sips.length)return; // already migrated
+  const seen=new Set();
+  S.inv.forEach(i=>{
+    if(i.sipAmount&&i.sipDate&&i.method==='SIP'){
+      const k=`${i.owner}||${i.country}||${i.category}||${i.fundName}||${i.sipAmount}||${i.sipDate}`;
+      if(seen.has(k))return;seen.add(k);
+      S.sips.push({id:uid(),owner:i.owner,country:i.country,category:i.category,fundName:i.fundName,amount:Number(i.sipAmount),currency:i.currency,sipDay:Number(i.sipDate),status:'active',startDate:i.date||new Date().toISOString().slice(0,10)});
+    }
+  });
+  if(S.sips.length)sP();
+}
+function checkPendingSips(){
+  S.pendingSips=[];
+  const today=new Date();const ty=today.getFullYear();const tm=today.getMonth();
+  S.sips.filter(s=>s.status==='active').forEach(sip=>{
+    const start=pD(sip.startDate)||new Date(2020,0,1);
+    let y=start.getFullYear(),m=start.getMonth();
+    while(y<ty||(y===ty&&m<=tm)){
+      const mKey=`${y}-${String(m+1).padStart(2,'0')}`;
+      // Match by fund+owner+category+country+SIP method+same year-month (any entry, not just _sipId tagged)
+      const exists=S.inv.some(i=>{
+        if(i.fundName!==sip.fundName||i.owner!==sip.owner||i.category!==sip.category||i.country!==sip.country||i.method!=='SIP')return false;
+        const d=pD(i.date);if(!d)return false;
+        const ik=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        return ik===mKey;
+      });
+      const skipped=sip.skipped&&sip.skipped.includes(mKey);
+      if(!exists&&!skipped&&(y>start.getFullYear()||m>=start.getMonth())){
+        S.pendingSips.push({sip,year:y,month:m,mKey});
+      }
+      m++;if(m>11){m=0;y++;}
+    }
+  });
+}
 function sI(){try{localStorage.setItem(SKEY,JSON.stringify(S.inv));}catch{}}
 function sS(){try{localStorage.setItem(KKEY,JSON.stringify(S.sett));}catch{}}
 function sV(){try{localStorage.setItem(VKEY,JSON.stringify(S.vals));}catch{}}
+function sP(){try{localStorage.setItem(PKEY,JSON.stringify(S.sips));}catch{}}
 function loadTheme(){try{const t=localStorage.getItem(MKEY);if(t==='light')document.documentElement.classList.add('light');}catch{}}
 function toggleTheme(){document.documentElement.classList.toggle('light');const isLight=document.documentElement.classList.contains('light');try{localStorage.setItem(MKEY,isLight?'light':'dark');}catch{}R();}
 function loadHide(){try{S.hide=localStorage.getItem(HKEY)==='1';}catch{}}
@@ -264,10 +303,17 @@ document.addEventListener('click',e=>{
   else if(a==='afund'){const inp=document.getElementById('afIn');const v=inp?.value.trim();if(v&&S.mf){const k=`${S.mf.country}::${S.mf.category}`;if(!S.sett.funds[k])S.sett.funds[k]=[];if(!S.sett.funds[k].includes(v)){S.sett.funds[k].push(v);sS();toast('"'+v+'" added');R();}}}
   else if(a==='abulk'){const ta=document.getElementById('bulkIn');const raw=ta?.value||'';const names=raw.split(/[,\n]+/).map(s=>s.trim()).filter(Boolean);if(names.length&&S.mf){const k=`${S.mf.country}::${S.mf.category}`;if(!S.sett.funds[k])S.sett.funds[k]=[];let added=0;names.forEach(n=>{if(!S.sett.funds[k].includes(n)){S.sett.funds[k].push(n);added++;}});sS();toast(added+' fund'+(added!==1?'s':'')+' added');R();}}
   else if(a==='b2s'){S.modal='settings';S.sTab='funds';R();}
-  else if(a==='reset'){if(t.dataset.confirmed){S.inv=[];S.vals=[];S.sett=structuredClone(DS);sI();sS();sV();toast('Reset','i');closeM();}else{t.dataset.confirmed='1';t.innerHTML='⚠️ Tap again to confirm reset';t.style.borderColor='rgba(239,68,68,.6)';t.style.color='#fff';t.style.background='rgba(239,68,68,.15)';setTimeout(()=>{if(t){t.removeAttribute('data-confirmed');t.innerHTML='🗑 Reset All Data';t.style.borderColor='';t.style.color='';t.style.background='';}},3000);}}
+  else if(a==='reset'){if(t.dataset.confirmed){S.inv=[];S.vals=[];S.sips=[];S.sett=structuredClone(DS);sI();sS();sV();sP();toast('Reset','i');closeM();}else{t.dataset.confirmed='1';t.innerHTML='⚠️ Tap again to confirm reset';t.style.borderColor='rgba(239,68,68,.6)';t.style.color='#fff';t.style.background='rgba(239,68,68,.15)';setTimeout(()=>{if(t){t.removeAttribute('data-confirmed');t.innerHTML='🗑 Reset All Data';t.style.borderColor='';t.style.color='';t.style.background='';}},3000);}}
   else if(a==='exp'){doExp();}
   else if(a==='theme'){toggleTheme();}
   else if(a==='hide'){toggleHide();}
+  else if(a==='addSip'){S.modal='sipForm';S.edit=null;R();}
+  else if(a==='editSip'){const sip=S.sips.find(s=>s.id===t.dataset.id);if(sip){S.edit=sip;S.modal='sipForm';R();}}
+  else if(a==='pauseSip'){const sip=S.sips.find(s=>s.id===t.dataset.id);if(sip){sip.status=sip.status==='active'?'paused':'active';sP();toast(sip.status==='active'?'Resumed':'Paused');R();}}
+  else if(a==='delSip'){S.sips=S.sips.filter(s=>s.id!==t.dataset.id);sP();toast('SIP deleted','i');R();}
+  else if(a==='saveSip'){saveSipMaster();}
+  else if(a==='confirmSip'){confirmPendingSip(t.dataset.id,t.dataset.mk);}
+  else if(a==='skipSip'){skipPendingSip(t.dataset.id,t.dataset.mk);}
   else if(a==='openVals'){S.modal='valuations';R();}
   else if(a==='saveVals'){saveValuation();}
   else if(a==='openValHist'){S.modal='valHistory';R();}
@@ -290,12 +336,19 @@ document.addEventListener('change',e=>{
   const t=e.target;
   if(t.id==='fCountry'){grabForm();_tempF.country=t.value;_tempF.currency=t.value==='India'?'INR':'GBP';_tempF.category='';_tempF.fundName='';S.edit=_tempF;R();}
   else if(t.id==='fCat'){if(t.value==='__new'){grabForm();showNewCat();}else{grabForm();_tempF.category=t.value;_tempF.fundName='';S.edit=_tempF;R();}}
-  else if(t.id==='fMethod'){grabForm();_tempF.method=t.value;if(t.value!=='SIP'){_tempF.sipAmount='';_tempF.sipDate='';}S.edit=_tempF;R();}
+  else if(t.id==='fMethod'){grabForm();_tempF.method=t.value;S.edit=_tempF;R();}
   else if(t.id==='fFund'){if(t.value==='__new'){grabForm();showNewFund();}else{/* normal select, no rerender needed */}}
   else if(t.dataset.a==='flt'){S.filters[t.dataset.k]=t.value;R();}
   else if(t.id==='dfy'){S.drillF.year=t.value;R();}
   else if(t.id==='dfm'){S.drillF.month=t.value;R();}
   else if(t.id==='sRate'){S.sett.exchangeRate=Number(t.value)||110;sS();toast('Rate updated');}
+  else if((t.id==='sipCountry'||t.id==='sipCat')&&S.modal==='sipForm'){
+    const g=id=>document.getElementById(id);
+    const cur={owner:g('sipOwner')?.value||S.lastOwner,country:g('sipCountry')?.value||S.lastCountry,category:g('sipCat')?.value||'',fundName:g('sipFund')?.value||'',amount:g('sipAmt')?.value||'',sipDay:g('sipDay')?.value||'',startDate:g('sipStart')?.value||''};
+    if(S.edit?.id)cur.id=S.edit.id;
+    if(t.id==='sipCountry'){cur.country=t.value;cur.category='';cur.fundName='';}
+    else if(t.id==='sipCat'){cur.category=t.value;cur.fundName='';}
+    S.edit=cur;R();}
 });
 
 // Enter key for inputs
@@ -327,9 +380,6 @@ function grabForm(){
   _tempF.amount=g('fAmt')?.value||_tempF.amount||'';
   _tempF.qty=g('fQty')?.value||_tempF.qty||'';
   _tempF.buyPrice=g('fBuyP')?.value||_tempF.buyPrice||'';
-  // Only capture SIP fields if method is SIP and fields exist
-  if(_tempF.method==='SIP'){_tempF.sipAmount=g('fSipAmt')?.value||_tempF.sipAmount||'';_tempF.sipDate=g('fSipDate')?.value||_tempF.sipDate||'';}
-  else{_tempF.sipAmount='';_tempF.sipDate='';}
   if(g('fDate'))_tempF.date=g('fDate').value;
   _tempF.notes=g('fNotes')?.value||_tempF.notes||'';
   if(S.edit?.id)_tempF.id=S.edit.id;
@@ -352,7 +402,7 @@ function doSave(){
   grabForm();
   const f=_tempF;
   if(!f.category||!f.fundName||!f.amount){toast('Fill category, fund & amount','e');return;}
-  const entry={owner:f.owner,country:f.country,category:f.category,fundName:f.fundName,method:f.method,amount:Number(f.amount),currency:f.currency,date:f.date,notes:f.notes||'',qty:f.qty?Number(f.qty):null,buyPrice:f.buyPrice?Number(f.buyPrice):null,sipAmount:f.method==='SIP'&&f.sipAmount?Number(f.sipAmount):null,sipDate:f.method==='SIP'&&f.sipDate?Number(f.sipDate):null,_ts:Date.now()};
+  const entry={owner:f.owner,country:f.country,category:f.category,fundName:f.fundName,method:f.method,amount:Number(f.amount),currency:f.currency,date:f.date,notes:f.notes||'',qty:f.qty?Number(f.qty):null,buyPrice:f.buyPrice?Number(f.buyPrice):null,_ts:Date.now()};
   S.lastOwner=f.owner;S.lastCountry=f.country;
   if(f.id){S.inv=S.inv.map(i=>i.id===f.id?{...entry,id:f.id}:i);toast('Updated');}
   else{S.inv.push({...entry,id:uid()});toast('Added');}
@@ -363,8 +413,8 @@ function closeM(){S.modal=null;S.edit=null;_tempF=null;R();}
 
 function doExp(){
   const wb=XLSX.utils.book_new();
-  const ws1=XLSX.utils.json_to_sheet(S.inv.map(i=>({ID:i.id,Owner:i.owner,Country:i.country,Category:i.category,'Fund/Stock Name':i.fundName,Method:i.method,'SIP Amount':i.sipAmount||'','SIP Date':i.sipDate||'',Qty:i.qty||'','Buy Price':i.buyPrice||'',Amount:i.amount,Currency:i.currency,Date:toD(i.date),Notes:i.notes||''})));
-  ws1['!cols']=[{wch:18},{wch:8},{wch:8},{wch:22},{wch:30},{wch:10},{wch:12},{wch:10},{wch:8},{wch:12},{wch:14},{wch:8},{wch:14},{wch:30}];
+  const ws1=XLSX.utils.json_to_sheet(S.inv.map(i=>({ID:i.id,Owner:i.owner,Country:i.country,Category:i.category,'Fund/Stock Name':i.fundName,Method:i.method,Qty:i.qty||'','Buy Price':i.buyPrice||'',Amount:i.amount,Currency:i.currency,Date:toD(i.date),Notes:i.notes||''})));
+  ws1['!cols']=[{wch:18},{wch:8},{wch:8},{wch:22},{wch:30},{wch:10},{wch:8},{wch:12},{wch:14},{wch:8},{wch:14},{wch:30}];
   XLSX.utils.book_append_sheet(wb,ws1,'Investments');
   const sr=[{Setting:'Exchange Rate (GBP to INR)',Value:String(S.sett.exchangeRate)},{Setting:'Methods',Value:gM().join(', ')},{Setting:'Categories: India',Value:gC('India').join(', ')},{Setting:'Categories: UK',Value:gC('UK').join(', ')}];
   Object.entries(S.sett.funds||{}).forEach(([k,f])=>sr.push({Setting:`Funds: ${k}`,Value:f.join(', ')}));
@@ -379,7 +429,7 @@ function doImp(e){
     try{
       const wb=XLSX.read(ev.target.result,{type:'array',cellDates:false,raw:false});
       const is=wb.Sheets['Investments'];
-      if(is){const rows=XLSX.utils.sheet_to_json(is);const parsed=rows.map(r=>({id:r.ID||uid(),owner:r.Owner||'Self',country:r.Country||'India',category:r.Category||'',fundName:r['Fund/Stock Name']||'',method:r.Method||'One-Time',sipAmount:r['SIP Amount']?Number(r['SIP Amount']):null,sipDate:r['SIP Date']?Number(r['SIP Date']):null,qty:r.Qty?Number(r.Qty):null,buyPrice:r['Buy Price']?Number(r['Buy Price']):null,amount:Number(r.Amount)||0,currency:r.Currency||'INR',date:toI(r.Date),notes:r.Notes||''}));if(S.impM==='replace')S.inv=parsed;else{const ids=new Set(S.inv.map(i=>i.id));S.inv=[...S.inv,...parsed.filter(p=>!ids.has(p.id))];}sI();}
+      if(is){const rows=XLSX.utils.sheet_to_json(is);const parsed=rows.map(r=>({id:r.ID||uid(),owner:r.Owner||'Self',country:r.Country||'India',category:r.Category||'',fundName:r['Fund/Stock Name']||'',method:r.Method||'One-Time',qty:r.Qty?Number(r.Qty):null,buyPrice:r['Buy Price']?Number(r['Buy Price']):null,amount:Number(r.Amount)||0,currency:r.Currency||'INR',date:toI(r.Date),notes:r.Notes||''}));if(S.impM==='replace')S.inv=parsed;else{const ids=new Set(S.inv.map(i=>i.id));S.inv=[...S.inv,...parsed.filter(p=>!ids.has(p.id))];}sI();}
       const ss=wb.Sheets['Settings'];
       if(ss){const rows=XLSX.utils.sheet_to_json(ss);const sp=v=>v?v.split(', ').map(s=>s.trim()).filter(Boolean):[];rows.forEach(r=>{if(r.Setting==='Exchange Rate (GBP to INR)')S.sett.exchangeRate=Number(r.Value)||110;else if(r.Setting==='Methods')S.sett.methods=sp(r.Value);else if(r.Setting==='Categories: India')S.sett.categories.India=sp(r.Value);else if(r.Setting==='Categories: UK')S.sett.categories.UK=sp(r.Value);else if(r.Setting?.startsWith('Funds: '))S.sett.funds[r.Setting.replace('Funds: ','')]=sp(r.Value);});sS();}
       toast('Imported ('+S.impM+')');R();
@@ -414,7 +464,7 @@ function saveValuation(){
 }
 
 function doJsonExp(){
-  const backup={v:3,ts:Date.now(),inv:S.inv,sett:S.sett,vals:S.vals};
+  const backup={v:3,ts:Date.now(),inv:S.inv,sett:S.sett,vals:S.vals,sips:S.sips};
   const blob=new Blob([JSON.stringify(backup)],{type:'application/json'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
@@ -431,6 +481,7 @@ function doJsonImp(e){
       if(!backup.inv||!Array.isArray(backup.inv))throw new Error('Invalid backup file');
       S.inv=backup.inv;sI();
       if(backup.vals){S.vals=backup.vals;sV();}
+      if(backup.sips){S.sips=backup.sips;sP();}
       if(backup.sett){S.sett={...DS,...backup.sett,categories:{...DS.categories,...backup.sett.categories},funds:{...DS.funds,...backup.sett.funds}};sS();}
       ['India','UK'].forEach(c=>{if(!S.sett.categories[c])S.sett.categories[c]=[];if(!S.sett.categories[c].includes('Debt'))S.sett.categories[c].push('Debt');});
       toast('Restored '+S.inv.length+' investments');R();
@@ -448,6 +499,7 @@ function R(){
   if(S.drill)html+=renderDrill();
   else if(S.tab==='dashboard')html+=renderDash();
   else if(S.tab==='portfolio')html+=renderPort();
+  else if(S.tab==='sips')html+=renderSips();
   else if(S.tab==='sync')html+=renderSync();
   html+=`</div>`;
   if(S.modal)html+=renderModal();
@@ -455,8 +507,8 @@ function R(){
 }
 
 function renderHdr(){
-  return`<header class="hdr"><div class="hdr-in"><div class="logo"><div class="logo-i">W</div><div><h1>WealthView</h1><p>Investment Tracker · v2.3</p></div></div><div style="display:flex;gap:6px"><button class="ibtn" data-a="hide" title="Toggle amounts">${S.hide?'🙈':'👁️'}</button><button class="ibtn" data-a="sett">⚙️</button></div></div>
-  <div class="tabs">${['dashboard','portfolio','sync'].map(t=>{const ic={dashboard:'📊',portfolio:'💼',sync:'🔄'};const lb={dashboard:'Dashboard',portfolio:'Portfolio',sync:'Sync'};return`<button class="tbtn ${S.tab===t?'on':''}" data-a="tab" data-v="${t}">${ic[t]} <span class="tl">${lb[t]}</span></button>`;}).join('')}</div></header>`;
+  return`<header class="hdr"><div class="hdr-in"><div class="logo"><div class="logo-i">W</div><div><h1>WealthView</h1><p>Investment Tracker · v2.4</p></div></div><div style="display:flex;gap:6px"><button class="ibtn" data-a="hide" title="Toggle amounts">${S.hide?'🙈':'👁️'}</button><button class="ibtn" data-a="sett">⚙️</button></div></div>
+  <div class="tabs">${['dashboard','portfolio','sips','sync'].map(t=>{const ic={dashboard:'📊',portfolio:'💼',sips:'🔁',sync:'🔄'};const lb={dashboard:'Dashboard',portfolio:'Portfolio',sips:'SIPs',sync:'Sync'};return`<button class="tbtn ${S.tab===t?'on':''}" data-a="tab" data-v="${t}">${ic[t]} <span class="tl">${lb[t]}</span></button>`;}).join('')}</div></header>`;
 }
 
 function renderDash(){
@@ -558,7 +610,8 @@ function renderPort(){
     const mp=g.method==='SIP'?'ps':'po';const fl=g.country==='India'?'🇮🇳':'🇬🇧';
     const sign=isDebt(g.category)?-1:1;
     grandTot+=g.tot*sign;grandN+=g.n;
-    o+=`<tr data-a="drill" data-i="${i}"><td><div style="font-weight:600">${g.fundName}</div><div style="font-size:11px;color:var(--t25)">${g.owner} · ${fl} ${g.country}${isDebt(g.category)?' · 🔴 Debt':''}${g.method==='SIP'&&g.sipAmount?' · SIP '+fmt(g.sipAmount,g.currency)+'/mo':''}</div></td><td class="hm" style="color:var(--t60)">${g.owner}</td><td class="hm"><span class="pill ${isDebt(g.category)?'pd':'pm'}">${g.category}</span></td><td class="hm"><span class="pill ${mp}">${g.method}</span></td><td class="tr mono" style="font-weight:700;color:${isDebt(g.category)?'var(--red)':'var(--amber)'}">${isDebt(g.category)?'−':''}${fmt(g.tot,g.currency)}</td><td class="tc" style="color:var(--t40)">${g.n}</td></tr>`;
+    const sipM=S.sips.find(s=>s.fundName===g.fundName&&s.owner===g.owner&&s.category===g.category&&s.country===g.country&&s.status==='active');
+    o+=`<tr data-a="drill" data-i="${i}"><td><div style="font-weight:600">${g.fundName}</div><div style="font-size:11px;color:var(--t25)">${g.owner} · ${fl} ${g.country}${isDebt(g.category)?' · 🔴 Debt':''}${sipM?' · SIP '+fmt(sipM.amount,sipM.currency)+'/mo':''}</div></td><td class="hm" style="color:var(--t60)">${g.owner}</td><td class="hm"><span class="pill ${isDebt(g.category)?'pd':'pm'}">${g.category}</span></td><td class="hm"><span class="pill ${mp}">${g.method}</span></td><td class="tr mono" style="font-weight:700;color:${isDebt(g.category)?'var(--red)':'var(--amber)'}">${isDebt(g.category)?'−':''}${fmt(g.tot,g.currency)}</td><td class="tc" style="color:var(--t40)">${g.n}</td></tr>`;
   });
   o+=`</tbody><tfoot><tr style="border-top:2px solid var(--brd2)"><td style="padding:12px;font-weight:700;font-size:13px">${_grps.length} group${_grps.length!==1?'s':''}</td><td class="hm"></td><td class="hm"></td><td class="hm"></td><td class="tr mono" style="padding:12px;font-weight:800;font-size:14px;color:var(--amber)">${fmt(grandTot,'INR')}</td><td class="tc" style="padding:12px;font-weight:700;color:var(--t40)">${grandN}</td></tr></tfoot></table></div></div>`;
   return o;
@@ -574,7 +627,7 @@ function renderDrill(){
   const cur=d.country==='India'?'INR':'GBP';
 
   let o=`<div class="dh"><button class="bk" data-a="back">← Portfolio</button><div class="spacer"></div><div class="dp"><span class="pill pm">${d.owner}</span><span class="pill pm">${d.country==='India'?'🇮🇳':'🇬🇧'} ${d.country}</span><span class="pill pm">${d.category}</span></div></div>`;
-  o+=`<div class="card"><div class="cbd"><div class="dm"><div><div style="font-size:18px;font-weight:800">${d.fundName}</div><div style="font-size:13px;color:var(--t40)">${data.length} entries · Total: <span class="mono" style="color:${isDbt?'var(--red)':'var(--amber)'};font-weight:700">${isDbt?'−':''}${fmt(total,cur)}</span></div>${(()=>{if(d.category==='Stocks'||isDbt)return '';const sip=all.find(i=>i.method==='SIP'&&i.sipAmount);return sip?`<div style="font-size:12px;color:var(--blue);margin-top:4px">SIP: ${fmt(sip.sipAmount,cur)}/month${sip.sipDate?' · Day '+sip.sipDate:''}</div>`:''})()}</div>
+  o+=`<div class="card"><div class="cbd"><div class="dm"><div><div style="font-size:18px;font-weight:800">${d.fundName}</div><div style="font-size:13px;color:var(--t40)">${data.length} entries · Total: <span class="mono" style="color:${isDbt?'var(--red)':'var(--amber)'};font-weight:700">${isDbt?'−':''}${fmt(total,cur)}</span></div>${(()=>{if(d.category==='Stocks'||isDbt)return '';const sipM=S.sips.find(s=>s.fundName===d.fundName&&s.owner===d.owner&&s.category===d.category&&s.country===d.country);return sipM?`<div style="font-size:12px;color:var(--blue);margin-top:4px">SIP: ${fmt(sipM.amount,cur)}/month · Day ${sipM.sipDay} · ${sipM.status==='active'?'🟢 Active':'⏸ Paused'}</div>`:''})()}</div>
   <div class="df"><select class="fsel" id="dfy"><option value="All">All Years</option>${yrs.map(y=>`<option ${S.drillF.year===y?'selected':''}>${y}</option>`).join('')}</select><select class="fsel" id="dfm"><option value="All">All Months</option>${MOS.map((m,i)=>`<option value="${i}" ${S.drillF.month===String(i)?'selected':''}>${m}</option>`).join('')}</select></div></div>`;
 
   const isStk=d.category==='Stocks';
@@ -604,14 +657,15 @@ function renderSync(){
 }
 
 function renderModal(){
-  const wide=S.modal==='settings'||S.modal==='funds'||S.modal==='valuations'||S.modal==='valHistory';
-  const titles={form:S.edit?.id?'Edit Investment':'Add Investment',settings:'Settings',funds:S.mf?`${S.mf.category} — ${S.mf.country}`:'Funds',valuations:'📊 Update Current Values',valHistory:'📈 Value History'};
+  const wide=S.modal==='settings'||S.modal==='funds'||S.modal==='valuations'||S.modal==='valHistory'||S.modal==='sipForm';
+  const titles={form:S.edit?.id?'Edit Investment':'Add Investment',settings:'Settings',funds:S.mf?`${S.mf.category} — ${S.mf.country}`:'Funds',valuations:'📊 Update Current Values',valHistory:'📈 Value History',sipForm:S.edit?.id?'Edit SIP':'New SIP Master'};
   let body='';
   if(S.modal==='form')body=renderForm();
   else if(S.modal==='settings')body=renderSett();
   else if(S.modal==='funds')body=renderFunds();
   else if(S.modal==='valuations')body=renderValuations();
   else if(S.modal==='valHistory')body=renderValHistory();
+  else if(S.modal==='sipForm')body=renderSipForm();
   return`<div class="mo open"><div class="ml ${wide?'wide':''}"><div class="mh"><h2>${titles[S.modal]||''}</h2><button class="ibtn" data-a="close">✕</button></div><div class="mb">${body}</div></div></div>`;
 }
 
@@ -679,8 +733,85 @@ function renderValHistory(){
   return o;
 }
 
+function saveSipMaster(){
+  const g=id=>document.getElementById(id);
+  const owner=g('sipOwner')?.value;const country=g('sipCountry')?.value;
+  const category=g('sipCat')?.value;const fundName=g('sipFund')?.value;
+  const amount=Number(g('sipAmt')?.value);const sipDay=Number(g('sipDay')?.value);
+  const startDate=g('sipStart')?.value;
+  if(!category||!fundName||!amount||!sipDay){toast('Fill all fields','e');return;}
+  const currency=country==='India'?'INR':'GBP';
+  if(S.edit?.id){
+    S.sips=S.sips.map(s=>s.id===S.edit.id?{...s,owner,country,category,fundName,amount,currency,sipDay,startDate}:s);
+    toast('SIP updated');
+  }else{
+    S.sips.push({id:uid(),owner,country,category,fundName,amount,currency,sipDay,status:'active',startDate});
+    toast('SIP created');
+  }
+  sP();closeM();
+}
+function confirmPendingSip(sipId,mKey){
+  const sip=S.sips.find(s=>s.id===sipId);if(!sip)return;
+  const[y,m]=mKey.split('-').map(Number);
+  const date=`${y}-${String(m).padStart(2,'0')}-${String(sip.sipDay).padStart(2,'0')}`;
+  S.inv.push({id:uid(),owner:sip.owner,country:sip.country,category:sip.category,fundName:sip.fundName,method:'SIP',amount:sip.amount,currency:sip.currency,date,notes:'Auto from SIP',qty:null,buyPrice:null,_sipId:sipId,_sipMonth:mKey,_ts:Date.now()});
+  sI();checkPendingSips();toast('Added '+MOS[m-1]+' '+y);R();
+}
+function skipPendingSip(sipId,mKey){
+  const sip=S.sips.find(s=>s.id===sipId);if(!sip)return;
+  if(!sip.skipped)sip.skipped=[];
+  sip.skipped.push(mKey);
+  sP();checkPendingSips();toast('Skipped','i');R();
+}
+
+function renderSips(){
+  checkPendingSips();
+  let o='';
+  // Pending SIPs banner
+  if(S.pendingSips.length){
+    o+=`<div class="card" style="border-color:var(--amber)"><div class="cbd"><div style="font-size:14px;font-weight:700;margin-bottom:10px;color:var(--amber)">⏳ ${S.pendingSips.length} Pending SIP${S.pendingSips.length!==1?'s':''}</div>`;
+    S.pendingSips.forEach(p=>{
+      const fl=p.sip.country==='India'?'🇮🇳':'🇬🇧';
+      o+=`<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--brd);gap:8px;flex-wrap:wrap"><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">${p.sip.fundName}</div><div style="font-size:11px;color:var(--t40)">${p.sip.owner} · ${fl} ${MOS[p.month]} ${p.year} · ${fmt(p.sip.amount,p.sip.currency)}</div></div><div style="display:flex;gap:6px"><button class="bp bs" data-a="confirmSip" data-id="${p.sip.id}" data-mk="${p.mKey}">✅ Add</button><button class="bg bs" data-a="skipSip" data-id="${p.sip.id}" data-mk="${p.mKey}">⏭ Skip</button></div></div>`;
+    });
+    o+=`</div></div>`;
+  }
+
+  // SIP Master list
+  o+=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"><div style="font-size:16px;font-weight:700">SIP Masters</div><button class="bp bs" data-a="addSip">+ New SIP</button></div>`;
+  if(!S.sips.length){
+    o+=`<div class="empty"><div class="ei">🔁</div><h3>No SIPs yet</h3><p>Create a SIP master to track recurring investments</p></div>`;
+  }else{
+    const active=S.sips.filter(s=>s.status==='active');
+    const paused=S.sips.filter(s=>s.status==='paused');
+    [['🟢 Active',active],['⏸ Paused',paused]].forEach(([label,list])=>{
+      if(!list.length)return;
+      o+=`<div style="font-size:12px;font-weight:700;color:var(--t25);text-transform:uppercase;letter-spacing:.8px;margin:14px 0 8px">${label} (${list.length})</div>`;
+      list.forEach(sip=>{
+        const fl=sip.country==='India'?'🇮🇳':'🇬🇧';
+        const entries=S.inv.filter(i=>i._sipId===sip.id&&i.amount>0).length;
+        o+=`<div class="card" style="margin-bottom:10px"><div class="cbd" style="padding:14px 16px"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap"><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700">${sip.fundName}</div><div style="font-size:12px;color:var(--t40);margin-top:2px">${sip.owner} · ${fl} ${sip.country} · ${sip.category}</div><div style="font-size:13px;margin-top:4px"><span class="mono" style="font-weight:700;color:var(--amber)">${fmt(sip.amount,sip.currency)}</span><span style="color:var(--t40)"> /month · Day ${sip.sipDay} · ${entries} entries</span></div></div><div style="display:flex;gap:6px;flex-shrink:0"><button class="bg bs" data-a="pauseSip" data-id="${sip.id}">${sip.status==='active'?'⏸':'▶'}</button><button class="bg bs" data-a="editSip" data-id="${sip.id}">✏️</button><button class="bd" style="padding:4px 10px;min-height:28px;min-width:32px;font-size:11px" data-a="delSip" data-id="${sip.id}">🗑</button></div></div></div></div>`;
+      });
+    });
+  }
+  return o;
+}
+
+function renderSipForm(){
+  const f=S.edit||{owner:S.lastOwner,country:S.lastCountry,category:'',fundName:'',amount:'',sipDay:'',startDate:new Date().toISOString().slice(0,10)};
+  const cats=gC(f.country);const funds=gF(f.country,f.category);
+  return`<div class="fr" style="margin-bottom:16px"><div><label class="fl">Owner</label><select class="fs" id="sipOwner">${OW.map(o=>`<option ${f.owner===o?'selected':''}>${o}</option>`).join('')}</select></div>
+  <div><label class="fl">Country</label><select class="fs" id="sipCountry"><option value="India" ${f.country==='India'?'selected':''}>🇮🇳 India</option><option value="UK" ${f.country==='UK'?'selected':''}>🇬🇧 UK</option></select></div></div>
+  <div style="margin-bottom:16px"><label class="fl">Category</label><select class="fs" id="sipCat"><option value="">Select...</option>${cats.map(c=>`<option ${f.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
+  <div style="margin-bottom:16px"><label class="fl">Fund / Stock Name</label><select class="fs" id="sipFund"><option value="">Select...</option>${funds.map(fn=>`<option ${f.fundName===fn?'selected':''}>${fn}</option>`).join('')}</select></div>
+  <div class="fr" style="margin-bottom:16px"><div><label class="fl">Monthly Amount</label><input class="fi" type="number" id="sipAmt" value="${f.amount||''}" placeholder="Amount" min="0" step="any"></div>
+  <div><label class="fl">Day of Month</label><select class="fs" id="sipDay"><option value="">Select...</option>${Array.from({length:28},(_,i)=>i+1).map(d=>`<option value="${d}" ${String(f.sipDay)===String(d)?'selected':''}>${d}</option>`).join('')}</select></div></div>
+  <div style="margin-bottom:16px"><label class="fl">Start Date</label><input class="fi" type="date" id="sipStart" value="${f.startDate||''}"></div>
+  <div class="brow"><button class="bp" data-a="saveSip">${f.id?'Update SIP':'Create SIP'}</button><button class="bg" data-a="close">Cancel</button></div>`;
+}
+
 function renderForm(){
-  const f=S.edit||{owner:S.lastOwner,country:S.lastCountry,category:'',fundName:'',method:'SIP',amount:'',currency:S.lastCountry==='India'?'INR':'GBP',date:new Date().toISOString().slice(0,10),notes:'',qty:'',buyPrice:'',sipAmount:'',sipDate:''};
+  const f=S.edit||{owner:S.lastOwner,country:S.lastCountry,category:'',fundName:'',method:'SIP',amount:'',currency:S.lastCountry==='India'?'INR':'GBP',date:new Date().toISOString().slice(0,10),notes:'',qty:'',buyPrice:''};
   _tempF={...f};
   const cats=gC(f.country);const funds=gF(f.country,f.category);const methods=gM();
 
@@ -698,8 +829,6 @@ function renderForm(){
   <div style="margin-bottom:16px"><label class="fl">Category</label><div id="catA"><select class="fs" id="fCat"><option value="">Select category...</option>${cats.map(c=>`<option ${f.category===c?'selected':''}>${c}</option>`).join('')}<option value="__new">＋ Add new category...</option></select></div></div>
   <div style="margin-bottom:16px"><label class="fl">${fundLabel}</label><div id="fundA">${!f.category?'<p style="font-size:13px;color:var(--t25);font-style:italic;padding:8px 0">Select a category first</p>':`<select class="fs" id="fFund"><option value="">Select ${isDbt?'debt type':'fund/stock'}...</option>${funds.map(fn=>`<option ${f.fundName===fn?'selected':''}>${fn}</option>`).join('')}<option value="__new">＋ Add new ${isDbt?'debt type':'fund/stock'}...</option></select>${funds.length===0?`<p class="fh">No ${isDbt?'debt types':'funds'} yet — select "Add new" above</p>`:''}`}</div></div>
   <div style="margin-bottom:16px"><label class="fl">Method</label><select class="fs" id="fMethod">${methods.map(m=>`<option ${f.method===m?'selected':''}>${m}</option>`).join('')}</select></div>
-  ${f.method==='SIP'?`<div class="fr" style="margin-bottom:16px"><div><label class="fl">SIP Amount (${f.currency})</label><input class="fi" type="number" id="fSipAmt" value="${f.sipAmount||''}" placeholder="Monthly SIP" min="0" step="any"></div>
-  <div><label class="fl">SIP Date (day of month)</label><select class="fs" id="fSipDate"><option value="">Select day...</option>${Array.from({length:28},(_,i)=>i+1).map(d=>`<option value="${d}" ${String(f.sipDate)===String(d)?'selected':''}>${d}</option>`).join('')}</select></div></div>`:''}
   ${amtSection}
   <div style="margin-bottom:16px"><label class="fl">Date</label><input class="fi" type="date" id="fDate" value="${toI(f.date)}"></div>
   <div style="margin-bottom:16px"><label class="fl">Notes (optional)</label><input class="fi" id="fNotes" value="${f.notes||''}" placeholder="Any notes..."></div>
@@ -748,7 +877,7 @@ function renderFunds(){
   return o;
 }
 
-load();loadTheme();loadHide();R();
+load();loadTheme();loadHide();checkPendingSips();R();
 </script>
 </body>
 </html>
