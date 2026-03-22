@@ -215,7 +215,9 @@ function checkPendingSips(){
           return ik===mKey;
         });
         if(!exists&&!skipped&&(y>start.getFullYear()||m>=start.getMonth())){
-          S.pendingSips.push({sip,year:y,month:m,mKey});
+          // For current month, only show after SIP day has passed
+          if(y===ty&&m===tm&&today.getDate()<sip.sipDay){}
+          else{S.pendingSips.push({sip,year:y,month:m,mKey});}
         }
         m++;if(m>11){m=0;y++;}
       }
@@ -270,11 +272,12 @@ document.addEventListener('input',e=>{
 
 let _tt;function toast(m,t='s'){let e=document.querySelector('.toast');if(e)e.remove();e=document.createElement('div');e.className='toast '+(t==='e'?'te':t==='i'?'ti':'ts');e.textContent=m;document.body.appendChild(e);clearTimeout(_tt);_tt=setTimeout(()=>e.remove(),2500)}
 
-function svgPie(data){
+function svgPie(data,owner){
   if(!data.length)return'';
   const total=data.reduce((s,d)=>s+d.value,0);
   if(total===0)return'';
   const sz=160,cx=sz/2,cy=sz/2,or=sz/2-4,ir=or*0.58,mr=(ir+or)/2,gap=0.03;
+  const ow=owner||'All';
   let a=-Math.PI/2,paths='',labels='';
   data.forEach((d,i)=>{
     const pct=d.value/total,angle=pct*Math.PI*2;
@@ -285,7 +288,7 @@ function svgPie(data){
     const ix1=cx+ir*Math.cos(a1),iy1=cy+ir*Math.sin(a1);
     const ix2=cx+ir*Math.cos(a2),iy2=cy+ir*Math.sin(a2);
     const lg=angle-gap>Math.PI?1:0;
-    paths+=`<path d="M${ox1},${oy1} A${or},${or} 0 ${lg} 1 ${ox2},${oy2} L${ix2},${iy2} A${ir},${ir} 0 ${lg} 0 ${ix1},${iy1} Z" fill="${PC[i%PC.length]}" data-a="piecat" data-v="${d.name}" style="cursor:pointer" opacity="0.9"><title>${d.name}: ${(pct*100).toFixed(1)}%</title></path>`;
+    paths+=`<path d="M${ox1},${oy1} A${or},${or} 0 ${lg} 1 ${ox2},${oy2} L${ix2},${iy2} A${ir},${ir} 0 ${lg} 0 ${ix1},${iy1} Z" fill="${PC[i%PC.length]}" data-a="piecat" data-v="${d.name}" data-ow="${ow}" style="cursor:pointer" opacity="0.9"><title>${d.name}: ${(pct*100).toFixed(1)}%</title></path>`;
     if(pct>=0.05){
       const mid=a+angle/2;
       const lx=cx+mr*Math.cos(mid),ly=cy+mr*Math.sin(mid);
@@ -297,9 +300,10 @@ function svgPie(data){
   return`<svg width="${sz}" height="${sz}" viewBox="0 0 ${sz} ${sz}" style="flex-shrink:0">${paths}${labels}${center}</svg>`;
 }
 
-function pieLegend(data){
+function pieLegend(data,owner){
   const total=data.reduce((s,d)=>s+d.value,0);
-  return data.map((d,i)=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;padding:4px;border-radius:8px;transition:background .15s" data-a="piecat" data-v="${d.name}"><div style="width:10px;height:10px;border-radius:3px;background:${PC[i%PC.length]};flex-shrink:0"></div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;color:var(--t60);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${d.name}</div><div style="font-size:11px;font-weight:700;color:var(--amber);font-family:'JetBrains Mono',monospace">${fmt(d.value,'INR')}</div></div></div>`).join('');
+  const ow=owner||'All';
+  return data.map((d,i)=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;padding:4px;border-radius:8px;transition:background .15s" data-a="piecat" data-v="${d.name}" data-ow="${ow}"><div style="width:10px;height:10px;border-radius:3px;background:${PC[i%PC.length]};flex-shrink:0"></div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;color:var(--t60);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${d.name}</div><div style="font-size:11px;font-weight:700;color:var(--amber);font-family:'JetBrains Mono',monospace">${fmt(d.value,'INR')}</div></div></div>`).join('');
 }
 
 /* ════════ EVENT DELEGATION ════════ */
@@ -311,7 +315,7 @@ document.addEventListener('click',e=>{
 
   if(a==='goHome'){if(S.drill){S.drill=null;}else{S.tab='dashboard';S.filters={owner:'All',country:'All',category:'All',method:'All'};S.search='';}R();}
   else if(a==='tab'){S.tab=t.dataset.v;S.drill=null;S.search='';history.pushState({tab:S.tab},'');R();}
-  else if(a==='piecat'){const cat=t.dataset.v;S.tab='portfolio';S.drill=null;S.filters={owner:'All',country:'All',category:cat,method:'All'};S.search='';history.pushState({tab:'portfolio',from:'dashboard'},'');toast('Filtered: '+cat,'i');R();}
+  else if(a==='piecat'){const cat=t.dataset.v;const ow=t.dataset.ow||'All';S.tab='portfolio';S.drill=null;S.filters={owner:ow,country:'All',category:cat,method:'All'};S.search='';history.pushState({tab:'portfolio',from:'dashboard'},'');toast('Filtered: '+ow+' · '+cat,'i');R();}
   else if(a==='sett'){S.modal='settings';S.sTab='general';history.pushState({modal:true},'');R();}
   else if(a==='add'){S.edit=null;S.modal='form';history.pushState({modal:true},'');R();}
   else if(a==='close'){closeM();}
@@ -325,6 +329,15 @@ document.addEventListener('click',e=>{
   else if(a==='rcat'){const[c,...rest]=t.dataset.v.split('::');const cat=rest.join('::');S.sett.categories[c]=gC(c).filter(x=>x!==cat);sS();toast('Removed "'+cat+'"','i');R();}
   else if(a==='acat'){const c=t.dataset.v;const inp=document.getElementById('ac_'+c);const v=inp?.value.trim();if(v){if(!S.sett.categories[c])S.sett.categories[c]=[];if(!S.sett.categories[c].includes(v)){S.sett.categories[c].push(v);sS();toast('"'+v+'" added');R();}}}
   else if(a==='rmet'){const v=t.dataset.v;S.sett.methods=gM().filter(x=>x!==v);sS();toast('Removed "'+v+'"','i');R();}
+  else if(a==='ecat'){const[c,...rest]=t.dataset.v.split('::');const old=rest.join('::');const si=t.closest('.si');if(si){si.innerHTML=`<input class="fi" id="ecatIn" value="${old}" style="flex:1"><button class="bp bs" data-a="ecat_ok" data-c="${c}" data-old="${old}">✓</button><button class="bg bs" data-a="ecat_no">✕</button>`;document.getElementById('ecatIn')?.focus();}}
+  else if(a==='ecat_ok'){const c=t.dataset.c;const old=t.dataset.old;const nn=document.getElementById('ecatIn')?.value.trim();if(nn&&nn!==old){S.sett.categories[c]=gC(c).map(x=>x===old?nn:x);const ok=`${c}::${old}`,nk=`${c}::${nn}`;if(S.sett.funds[ok]){S.sett.funds[nk]=S.sett.funds[ok];delete S.sett.funds[ok];}S.inv.forEach(i=>{if(i.country===c&&i.category===old)i.category=nn;});sI();sS();S.sips.forEach(s=>{if(s.country===c&&s.category===old)s.category=nn;});sP();S.vals.forEach(snap=>{OW.forEach(ow=>{const vk=`${ow}::${c}::${old}`,vnk=`${ow}::${c}::${nn}`;if(snap.values[vk]!==undefined){snap.values[vnk]=snap.values[vk];delete snap.values[vk];}});});sV();toast('Renamed to "'+nn+'"');}R();}
+  else if(a==='ecat_no'){R();}
+  else if(a==='emet'){const old=t.dataset.v;const si=t.closest('.si');if(si){si.innerHTML=`<input class="fi" id="emetIn" value="${old}" style="flex:1"><button class="bp bs" data-a="emet_ok" data-old="${old}">✓</button><button class="bg bs" data-a="emet_no">✕</button>`;document.getElementById('emetIn')?.focus();}}
+  else if(a==='emet_ok'){const old=t.dataset.old;const nn=document.getElementById('emetIn')?.value.trim();if(nn&&nn!==old){S.sett.methods=gM().map(x=>x===old?nn:x);S.inv.forEach(i=>{if(i.method===old)i.method=nn;});sI();sS();toast('Renamed to "'+nn+'"');}R();}
+  else if(a==='emet_no'){R();}
+  else if(a==='efund'){const old=t.dataset.v;const si=t.closest('.si');if(si){si.innerHTML=`<input class="fi" id="efundIn" value="${old}" style="flex:1"><button class="bp bs" data-a="efund_ok" data-old="${old}">✓</button><button class="bg bs" data-a="efund_no">✕</button>`;document.getElementById('efundIn')?.focus();}}
+  else if(a==='efund_ok'){const old=t.dataset.old;const nn=document.getElementById('efundIn')?.value.trim();if(nn&&nn!==old&&S.mf){const k=`${S.mf.country}::${S.mf.category}`;S.sett.funds[k]=gF(S.mf.country,S.mf.category).map(x=>x===old?nn:x);S.inv.forEach(i=>{if(i.fundName===old&&i.country===S.mf.country&&i.category===S.mf.category)i.fundName=nn;});sI();sS();S.sips.forEach(s=>{if(s.fundName===old&&s.country===S.mf.country&&s.category===S.mf.category)s.fundName=nn;});sP();toast('Renamed to "'+nn+'"');}R();}
+  else if(a==='efund_no'){R();}
   else if(a==='amet'){const inp=document.getElementById('amIn');const v=inp?.value.trim();if(v){const m=gM();if(!m.includes(v)){S.sett.methods=[...m,v];sS();toast('"'+v+'" added');R();}}}
   else if(a==='mf'){const[c,...rest]=t.dataset.v.split('::');S.mf={country:c,category:rest.join('::')};S.modal='funds';history.pushState({modal:true},'');R();}
   else if(a==='rfund'){const f=t.dataset.v;const k=`${S.mf.country}::${S.mf.category}`;S.sett.funds[k]=gF(S.mf.country,S.mf.category).filter(x=>x!==f);sS();R();}
@@ -390,6 +403,9 @@ document.addEventListener('keydown',e=>{
   else if(t.id==='afIn')document.querySelector('[data-a="afund"]')?.click();
   else if(t.id==='ncIn')document.querySelector('[data-a="ncat_ok"]')?.click();
   else if(t.id==='nfIn')document.querySelector('[data-a="nfund_ok"]')?.click();
+  else if(t.id==='ecatIn')document.querySelector('[data-a="ecat_ok"]')?.click();
+  else if(t.id==='emetIn')document.querySelector('[data-a="emet_ok"]')?.click();
+  else if(t.id==='efundIn')document.querySelector('[data-a="efund_ok"]')?.click();
 });
 
 document.addEventListener('change',e=>{if(e.target.id==='impF')doImp(e);if(e.target.id==='jimpF')doJsonImp(e);});
@@ -582,7 +598,7 @@ function renderDash(){
     o+=`<div class="card"><div class="chd"><div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px"><div><div class="fl" style="margin:0">${ow}</div><div style="font-size:22px;font-weight:800;margin-top:2px">${fmt(net,'INR')}</div><div style="font-size:12px;margin-top:4px;display:flex;gap:12px;flex-wrap:wrap"><span style="color:var(--green)">Assets: ${fmt(d.assets,'INR')}</span>${d.debts>0?`<span style="color:var(--red)">Debt: −${fmt(d.debts,'INR')}</span>`:''}</div></div><div style="display:flex;gap:16px">${cyH}</div></div></div>`;
 
     if(cd.length){
-      o+=`<div class="cbd" style="border-bottom:${dd.length?'1px solid var(--brd)':'none'}"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--green);margin-bottom:10px">Assets by Category</div><div style="display:flex;align-items:center;gap:16px"><div style="flex-shrink:0;width:140px">${svgPie(cd)}</div><div style="flex:1;min-width:0;overflow-y:auto;max-height:180px">${pieLegend(cd)}</div></div>`;
+      o+=`<div class="cbd" style="border-bottom:${dd.length?'1px solid var(--brd)':'none'}"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--green);margin-bottom:10px">Assets by Category</div><div style="display:flex;align-items:center;gap:16px"><div style="flex-shrink:0;width:140px">${svgPie(cd,ow)}</div><div style="flex:1;min-width:0;overflow-y:auto;max-height:180px">${pieLegend(cd,ow)}</div></div>`;
       // Show P&L per category if valuation exists
       if(lv){
         const catPnl=Object.entries(d.catKey).map(([k,inv])=>{
@@ -920,12 +936,12 @@ function renderSett(){
     ['India','UK'].forEach(c=>{
       const cats=gC(c);
       o+=`<div style="margin-bottom:24px"><div style="font-size:14px;font-weight:700;margin-bottom:10px">${c==='India'?'🇮🇳':'🇬🇧'} ${c}</div>`;
-      cats.forEach(cat=>{o+=`<div class="si"><span>${cat}</span><button class="bd" data-a="rcat" data-v="${c}::${cat}">Remove</button></div>`;});
+      cats.forEach(cat=>{o+=`<div class="si"><span style="flex:1">${cat}</span><button class="bg bs" data-a="ecat" data-v="${c}::${cat}" style="margin-right:6px">✏️</button><button class="bd" data-a="rcat" data-v="${c}::${cat}">Remove</button></div>`;});
       o+=`<div style="display:flex;gap:8px;margin-top:8px"><input class="fi" placeholder="Add category..." id="ac_${c}" style="flex:1"><button class="bp bs" data-a="acat" data-v="${c}">Add</button></div></div>`;
     });
   } else if(S.sTab==='methods'){
     o+=`<p style="font-size:13px;color:var(--t40);margin-bottom:12px">Configure investment methods</p>`;
-    gM().forEach(m=>{o+=`<div class="si"><span>${m}</span><button class="bd" data-a="rmet" data-v="${m}">Remove</button></div>`;});
+    gM().forEach(m=>{o+=`<div class="si"><span style="flex:1">${m}</span><button class="bg bs" data-a="emet" data-v="${m}" style="margin-right:6px">✏️</button><button class="bd" data-a="rmet" data-v="${m}">Remove</button></div>`;});
     o+=`<div style="display:flex;gap:8px;margin-top:10px"><input class="fi" placeholder="Add method..." id="amIn" style="flex:1"><button class="bp bs" data-a="amet">Add</button></div>`;
   } else if(S.sTab==='funds'){
     o+=`<p style="font-size:13px;color:var(--t40);margin-bottom:14px">Tap a category to manage its funds.</p><div class="fg">`;
@@ -943,7 +959,7 @@ function renderFunds(){
   const funds=gF(S.mf.country,S.mf.category);
   let o=`<div style="display:flex;gap:8px;margin-bottom:10px"><input class="fi" placeholder="Add one name..." id="afIn" style="flex:1"><button class="bp bs" data-a="afund">Add</button></div>`;
   o+=`<div style="margin-bottom:16px;padding:14px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid var(--brd)"><label class="fl">Bulk Add — one per line (or comma separated)</label><textarea class="fi" id="bulkIn" rows="4" style="margin-top:6px;resize:vertical" placeholder="Paste one name per line, e.g.\nHDFC Bank\nInfosys\nTCS\nReliance"></textarea><button class="bp bs" style="margin-top:8px;width:100%" data-a="abulk">Add All</button></div>`;
-  if(funds.length){funds.forEach(f=>{o+=`<div class="si"><span>${f}</span><button class="bd" data-a="rfund" data-v="${f}">Remove</button></div>`;});}
+  if(funds.length){funds.forEach(f=>{o+=`<div class="si"><span style="flex:1">${f}</span><button class="bg bs" data-a="efund" data-v="${f}" style="margin-right:6px">✏️</button><button class="bd" data-a="rfund" data-v="${f}">Remove</button></div>`;});}
   else{o+=`<div class="empty" style="padding:30px"><p style="font-size:13px">No funds yet. Add above.</p></div>`;}
   o+=`<div style="margin-top:16px"><button class="bg" style="width:100%" data-a="b2s">← Back to Settings</button></div>`;
   return o;
