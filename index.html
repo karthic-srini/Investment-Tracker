@@ -151,11 +151,12 @@ tfoot td{padding:12px;border-top:2px solid rgba(245,158,11,.3);}
 const SKEY='wv_inv_v3',KKEY='wv_sett_v3',MKEY='wv_theme',VKEY='wv_vals_v1',HKEY='wv_hide',PKEY='wv_sips_v1',OW=['Self','Spouse'],
 PC=['#FF6B4A','#2EC4F6','#7ED957','#FFB340','#A855F7','#FF5FA2','#38BDF8','#FB923C','#4ADE80','#818CF8','#F472B6','#22D3EE'],
 MOS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
-DS={exchangeRate:110,categories:{India:['Mutual Funds','Stocks','SGB','Govt Bonds','Corporate Bonds','RBI Gilt','ETFs','FD','RD','Debt'],UK:['Bank Savings','ISA - Cash','ISA - Stocks & Investments','Pension Account','Debt']},methods:['SIP','One-Time','Lumpsum','EMI'],funds:{'India::Debt':['Personal Loan','Home Loan / Mortgage','Car Loan','Education Loan','Credit Card','Gold Loan','Other Loan'],'UK::Debt':['Mortgage','Personal Loan','Car Finance','Student Loan','Credit Card','Other Loan']}};
+DS={exchangeRate:110,categories:{India:['Mutual Funds','Stocks','SGB','Govt Bonds','Corporate Bonds','RBI Gilt','ETFs','FD','RD','Debt'],UK:['Bank Savings','ISA - Cash','ISA - Stocks & Investments','Pension Account','Debt']},methods:['SIP','One-Time','Lumpsum','EMI'],funds:{'India::Debt':['Personal Loan','Home Loan / Mortgage','Car Loan','Education Loan','Credit Card','Gold Loan','Other Loan'],'UK::Debt':['Mortgage','Personal Loan','Car Finance','Student Loan','Credit Card','Other Loan']},assetClass:{}};
+const AC=['Equity','Debt','Hybrid','Gold','Cash','Other'],ACC={'Equity':'#10b981','Debt':'#3b82f6','Hybrid':'#a855f7','Gold':'#f59e0b','Cash':'#22d3ee','Other':'rgba(255,255,255,0.3)'};
 
 let S={inv:[],vals:[],sips:[],sett:structuredClone(DS),tab:'dashboard',drill:null,drillF:{year:'All',month:'All'},filters:{owner:'All',country:'All',category:'All',method:'All'},modal:null,edit:null,sTab:'general',mf:null,impM:'replace',lastOwner:'Self',lastCountry:'India',sortCol:'tot',sortDir:'desc',search:'',hide:false,pendingSips:[],sipF:{owner:'All',country:'All',status:'All'}};
 
-function load(){try{const d=localStorage.getItem(SKEY);if(d)S.inv=JSON.parse(d);}catch{}try{const s=localStorage.getItem(KKEY);if(s){const p=JSON.parse(s);S.sett={...DS,...p,categories:{...DS.categories,...p.categories},funds:{...DS.funds,...p.funds}};}}catch{}
+function load(){try{const d=localStorage.getItem(SKEY);if(d)S.inv=JSON.parse(d);}catch{}try{const s=localStorage.getItem(KKEY);if(s){const p=JSON.parse(s);S.sett={...DS,...p,categories:{...DS.categories,...p.categories},funds:{...DS.funds,...p.funds},assetClass:{...DS.assetClass,...(p.assetClass||{})}};}}catch{}
 try{const v=localStorage.getItem(VKEY);if(v)S.vals=JSON.parse(v);}catch{}
 try{const p=localStorage.getItem(PKEY);if(p)S.sips=JSON.parse(p);}catch{}
 // Ensure Debt category exists + dedup all fund lists
@@ -252,6 +253,7 @@ function gC(c){return[...new Set(S.sett.categories?.[c]||DS.categories[c]||[])].
 function gM(){return[...new Set(S.sett.methods||DS.methods)].sort((a,b)=>a.localeCompare(b))}
 function gF(c,k){return[...new Set(S.sett.funds?.[`${c}::${k}`]||[])].sort((a,b)=>a.localeCompare(b))}
 function isDebt(cat){return cat==='Debt';}
+function gAC(c,cat,fund){return S.sett.assetClass[`${c}::${cat}::${fund}`]||'Other';}
 function latestVal(){return S.vals.length?S.vals[S.vals.length-1]:null;}
 function getInvested(){
   const m={};
@@ -330,13 +332,13 @@ document.addEventListener('click',e=>{
   else if(a==='acat'){const c=t.dataset.v;const inp=document.getElementById('ac_'+c);const v=inp?.value.trim();if(v){if(!S.sett.categories[c])S.sett.categories[c]=[];if(!S.sett.categories[c].includes(v)){S.sett.categories[c].push(v);sS();toast('"'+v+'" added');R();}}}
   else if(a==='rmet'){const v=t.dataset.v;S.sett.methods=gM().filter(x=>x!==v);sS();toast('Removed "'+v+'"','i');R();}
   else if(a==='ecat'){const[c,...rest]=t.dataset.v.split('::');const old=rest.join('::');const si=t.closest('.si');if(si){si.innerHTML=`<input class="fi" id="ecatIn" value="${old}" style="flex:1"><button class="bp bs" data-a="ecat_ok" data-c="${c}" data-old="${old}">✓</button><button class="bg bs" data-a="ecat_no">✕</button>`;document.getElementById('ecatIn')?.focus();}}
-  else if(a==='ecat_ok'){const c=t.dataset.c;const old=t.dataset.old;const nn=document.getElementById('ecatIn')?.value.trim();if(nn&&nn!==old){S.sett.categories[c]=gC(c).map(x=>x===old?nn:x);const ok=`${c}::${old}`,nk=`${c}::${nn}`;if(S.sett.funds[ok]){S.sett.funds[nk]=S.sett.funds[ok];delete S.sett.funds[ok];}S.inv.forEach(i=>{if(i.country===c&&i.category===old)i.category=nn;});sI();sS();S.sips.forEach(s=>{if(s.country===c&&s.category===old)s.category=nn;});sP();S.vals.forEach(snap=>{OW.forEach(ow=>{const vk=`${ow}::${c}::${old}`,vnk=`${ow}::${c}::${nn}`;if(snap.values[vk]!==undefined){snap.values[vnk]=snap.values[vk];delete snap.values[vk];}});});sV();toast('Renamed to "'+nn+'"');}R();}
+  else if(a==='ecat_ok'){const c=t.dataset.c;const old=t.dataset.old;const nn=document.getElementById('ecatIn')?.value.trim();if(nn&&nn!==old){S.sett.categories[c]=gC(c).map(x=>x===old?nn:x);const ok=`${c}::${old}`,nk=`${c}::${nn}`;if(S.sett.funds[ok]){S.sett.funds[nk]=S.sett.funds[ok];delete S.sett.funds[ok];}Object.keys(S.sett.assetClass).forEach(k=>{if(k.startsWith(c+'::'+old+'::')){S.sett.assetClass[k.replace(c+'::'+old+'::',c+'::'+nn+'::')]=S.sett.assetClass[k];delete S.sett.assetClass[k];}});S.inv.forEach(i=>{if(i.country===c&&i.category===old)i.category=nn;});sI();sS();S.sips.forEach(s=>{if(s.country===c&&s.category===old)s.category=nn;});sP();S.vals.forEach(snap=>{OW.forEach(ow=>{const vk=`${ow}::${c}::${old}`,vnk=`${ow}::${c}::${nn}`;if(snap.values[vk]!==undefined){snap.values[vnk]=snap.values[vk];delete snap.values[vk];}});});sV();toast('Renamed to "'+nn+'"');}R();}
   else if(a==='ecat_no'){R();}
   else if(a==='emet'){const old=t.dataset.v;const si=t.closest('.si');if(si){si.innerHTML=`<input class="fi" id="emetIn" value="${old}" style="flex:1"><button class="bp bs" data-a="emet_ok" data-old="${old}">✓</button><button class="bg bs" data-a="emet_no">✕</button>`;document.getElementById('emetIn')?.focus();}}
   else if(a==='emet_ok'){const old=t.dataset.old;const nn=document.getElementById('emetIn')?.value.trim();if(nn&&nn!==old){S.sett.methods=gM().map(x=>x===old?nn:x);S.inv.forEach(i=>{if(i.method===old)i.method=nn;});sI();sS();toast('Renamed to "'+nn+'"');}R();}
   else if(a==='emet_no'){R();}
   else if(a==='efund'){const old=t.dataset.v;const si=t.closest('.si');if(si){si.innerHTML=`<input class="fi" id="efundIn" value="${old}" style="flex:1"><button class="bp bs" data-a="efund_ok" data-old="${old}">✓</button><button class="bg bs" data-a="efund_no">✕</button>`;document.getElementById('efundIn')?.focus();}}
-  else if(a==='efund_ok'){const old=t.dataset.old;const nn=document.getElementById('efundIn')?.value.trim();if(nn&&nn!==old&&S.mf){const k=`${S.mf.country}::${S.mf.category}`;S.sett.funds[k]=gF(S.mf.country,S.mf.category).map(x=>x===old?nn:x);S.inv.forEach(i=>{if(i.fundName===old&&i.country===S.mf.country&&i.category===S.mf.category)i.fundName=nn;});sI();sS();S.sips.forEach(s=>{if(s.fundName===old&&s.country===S.mf.country&&s.category===S.mf.category)s.fundName=nn;});sP();toast('Renamed to "'+nn+'"');}R();}
+  else if(a==='efund_ok'){const old=t.dataset.old;const nn=document.getElementById('efundIn')?.value.trim();if(nn&&nn!==old&&S.mf){const k=`${S.mf.country}::${S.mf.category}`;S.sett.funds[k]=gF(S.mf.country,S.mf.category).map(x=>x===old?nn:x);const ack=`${S.mf.country}::${S.mf.category}::${old}`,nack=`${S.mf.country}::${S.mf.category}::${nn}`;if(S.sett.assetClass[ack]){S.sett.assetClass[nack]=S.sett.assetClass[ack];delete S.sett.assetClass[ack];}S.inv.forEach(i=>{if(i.fundName===old&&i.country===S.mf.country&&i.category===S.mf.category)i.fundName=nn;});sI();sS();S.sips.forEach(s=>{if(s.fundName===old&&s.country===S.mf.country&&s.category===S.mf.category)s.fundName=nn;});sP();toast('Renamed to "'+nn+'"');}R();}
   else if(a==='efund_no'){R();}
   else if(a==='amet'){const inp=document.getElementById('amIn');const v=inp?.value.trim();if(v){const m=gM();if(!m.includes(v)){S.sett.methods=[...m,v];sS();toast('"'+v+'" added');R();}}}
   else if(a==='mf'){const[c,...rest]=t.dataset.v.split('::');S.mf={country:c,category:rest.join('::')};S.modal='funds';history.pushState({modal:true},'');R();}
@@ -384,6 +386,7 @@ document.addEventListener('change',e=>{
   else if(t.id==='dfm'){S.drillF.month=t.value;R();}
   else if(t.dataset.a==='sipflt'){S.sipF[t.dataset.k]=t.value;R();}
   else if(t.id==='sRate'){S.sett.exchangeRate=Number(t.value)||110;sS();toast('Rate updated');}
+  else if(t.dataset.a==='setac'&&S.mf){const f=t.dataset.f;const k=`${S.mf.country}::${S.mf.category}::${f}`;if(!S.sett.assetClass)S.sett.assetClass={};S.sett.assetClass[k]=t.value;sS();toast(f+' → '+t.value);}
   else if((t.id==='sipCountry'||t.id==='sipCat'||t.id==='sipFreq')&&S.modal==='sipForm'){
     const g=id=>document.getElementById(id);
     const cur={owner:g('sipOwner')?.value||S.lastOwner,country:g('sipCountry')?.value||S.lastCountry,category:g('sipCat')?.value||'',fundName:g('sipFund')?.value||'',amount:g('sipAmt')?.value||'',sipDay:g('sipDay')?.value||'',freq:g('sipFreq')?.value||'monthly',startDate:g('sipStart')?.value||''};
@@ -620,6 +623,26 @@ function renderDash(){
       o+=`</div>`;
     }
     if(dd.length){o+=`<div class="cbd"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--red);margin-bottom:10px">Debt Breakdown</div>${dd.map(d=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--brd)"><span style="font-size:13px;color:var(--t60)">${d.name}</span><span class="mono" style="font-size:13px;font-weight:700;color:var(--red)">−${fmt(d.value,'INR')}</span></div>`).join('')}</div>`;}
+
+    // Asset Allocation bars
+    const acMap={};
+    S.inv.filter(i=>i.owner===ow&&!isDebt(i.category)).forEach(i=>{
+      const ac=gAC(i.country,i.category,i.fundName);
+      const v=ti(i.amount,i.currency);
+      acMap[ac]=(acMap[ac]||0)+v;
+    });
+    const acData=Object.entries(acMap).sort((a,b)=>b[1]-a[1]);
+    const acTotal=acData.reduce((s,[,v])=>s+v,0);
+    if(acData.length){
+      o+=`<div class="cbd"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t25);margin-bottom:10px">Asset Allocation</div>`;
+      acData.forEach(([ac,val])=>{
+        const pct=acTotal?(val/acTotal*100).toFixed(1):0;
+        const w=acTotal?Math.max(2,val/acTotal*100):0;
+        o+=`<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span style="font-weight:600;color:var(--t60)">${ac}</span><span class="mono" style="color:var(--t40)">${fmt(val,'INR')} · ${pct}%</span></div><div style="height:6px;border-radius:3px;background:var(--card);overflow:hidden"><div style="height:100%;width:${w}%;border-radius:3px;background:${ACC[ac]||ACC.Other}"></div></div></div>`;
+      });
+      o+=`</div>`;
+    }
+
     o+=`</div>`;
   });
   return o;
@@ -959,7 +982,7 @@ function renderFunds(){
   const funds=gF(S.mf.country,S.mf.category);
   let o=`<div style="display:flex;gap:8px;margin-bottom:10px"><input class="fi" placeholder="Add one name..." id="afIn" style="flex:1"><button class="bp bs" data-a="afund">Add</button></div>`;
   o+=`<div style="margin-bottom:16px;padding:14px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid var(--brd)"><label class="fl">Bulk Add — one per line (or comma separated)</label><textarea class="fi" id="bulkIn" rows="4" style="margin-top:6px;resize:vertical" placeholder="Paste one name per line, e.g.\nHDFC Bank\nInfosys\nTCS\nReliance"></textarea><button class="bp bs" style="margin-top:8px;width:100%" data-a="abulk">Add All</button></div>`;
-  if(funds.length){funds.forEach(f=>{o+=`<div class="si"><span style="flex:1">${f}</span><button class="bg bs" data-a="efund" data-v="${f}" style="margin-right:6px">✏️</button><button class="bd" data-a="rfund" data-v="${f}">Remove</button></div>`;});}
+  if(funds.length){funds.forEach(f=>{const ac=gAC(S.mf.country,S.mf.category,f);o+=`<div class="si" style="flex-wrap:wrap;gap:6px"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f}</span><select class="fsel" data-a="setac" data-f="${f}" style="min-width:80px;padding:6px 24px 6px 8px;font-size:11px">${AC.map(a=>`<option value="${a}" ${ac===a?'selected':''}>${a}</option>`).join('')}</select><button class="bg bs" data-a="efund" data-v="${f}" style="margin:0">✏️</button><button class="bd" data-a="rfund" data-v="${f}" style="min-width:auto;min-height:32px;padding:4px 10px">Remove</button></div>`;});}
   else{o+=`<div class="empty" style="padding:30px"><p style="font-size:13px">No funds yet. Add above.</p></div>`;}
   o+=`<div style="margin-top:16px"><button class="bg" style="width:100%" data-a="b2s">← Back to Settings</button></div>`;
   return o;
