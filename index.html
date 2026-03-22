@@ -845,13 +845,18 @@ function renderSips(){
       });
     });
     // Summary
-    const totalMonthly=filtered.filter(s=>s.status==='active'&&s.freq!=='weekly').reduce((s,p)=>s+p.amount,0);
-    const totalWeekly=filtered.filter(s=>s.status==='active'&&s.freq==='weekly').reduce((s,p)=>s+p.amount,0);
-    if(totalMonthly||totalWeekly){
+    const activeFilt=filtered.filter(s=>s.status==='active');
+    const mINR=activeFilt.filter(s=>s.freq!=='weekly'&&s.currency==='INR').reduce((s,p)=>s+p.amount,0);
+    const mGBP=activeFilt.filter(s=>s.freq!=='weekly'&&s.currency==='GBP').reduce((s,p)=>s+p.amount,0);
+    const wINR=activeFilt.filter(s=>s.freq==='weekly'&&s.currency==='INR').reduce((s,p)=>s+p.amount,0);
+    const wGBP=activeFilt.filter(s=>s.freq==='weekly'&&s.currency==='GBP').reduce((s,p)=>s+p.amount,0);
+    if(mINR||mGBP||wINR||wGBP){
       o+=`<div style="margin-top:10px;padding:12px 16px;border-radius:12px;background:var(--card);border:1px solid var(--brd);font-size:13px;color:var(--t40)">Active SIP total: `;
       const parts=[];
-      if(totalMonthly)parts.push(`<span class="mono" style="font-weight:700;color:var(--amber)">${fmt(totalMonthly,'INR')}</span>/month`);
-      if(totalWeekly)parts.push(`<span class="mono" style="font-weight:700;color:var(--amber)">${fmt(totalWeekly,'INR')}</span>/week`);
+      if(mINR)parts.push(`<span class="mono" style="font-weight:700;color:var(--amber)">${fmt(mINR,'INR')}</span>/month`);
+      if(mGBP)parts.push(`<span class="mono" style="font-weight:700;color:var(--amber)">${fmt(mGBP,'GBP')}</span>/month`);
+      if(wINR)parts.push(`<span class="mono" style="font-weight:700;color:var(--amber)">${fmt(wINR,'INR')}</span>/week`);
+      if(wGBP)parts.push(`<span class="mono" style="font-weight:700;color:var(--amber)">${fmt(wGBP,'GBP')}</span>/week`);
       o+=parts.join(' + ')+`</div>`;
     }
   }
