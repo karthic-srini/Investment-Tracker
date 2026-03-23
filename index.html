@@ -148,17 +148,18 @@ tfoot td{padding:12px;border-top:2px solid rgba(245,158,11,.3);}
 <div id="app"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const SKEY='wv_inv_v3',KKEY='wv_sett_v3',MKEY='wv_theme',VKEY='wv_vals_v1',HKEY='wv_hide',PKEY='wv_sips_v1',OW=['Self','Spouse'],
+const SKEY='wv_inv_v3',KKEY='wv_sett_v3',MKEY='wv_theme',VKEY='wv_vals_v1',HKEY='wv_hide',PKEY='wv_sips_v1',GKEY='wv_gsync',OW=['Self','Spouse'],
 PC=['#FF6B4A','#2EC4F6','#7ED957','#FFB340','#A855F7','#FF5FA2','#38BDF8','#FB923C','#4ADE80','#818CF8','#F472B6','#22D3EE'],
 MOS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
 DS={exchangeRate:110,categories:{India:['Mutual Funds','Stocks','SGB','Govt Bonds','Corporate Bonds','RBI Gilt','ETFs','FD','RD','Debt'],UK:['Bank Savings','ISA - Cash','ISA - Stocks & Investments','Pension Account','Debt']},methods:['SIP','One-Time','Lumpsum','EMI'],funds:{'India::Debt':['Personal Loan','Home Loan / Mortgage','Car Loan','Education Loan','Credit Card','Gold Loan','Other Loan'],'UK::Debt':['Mortgage','Personal Loan','Car Finance','Student Loan','Credit Card','Other Loan']},assetClass:{}};
 const AC=['Equity','Debt','Hybrid','Gold','Cash','Other'],ACC={'Equity':'#10b981','Debt':'#3b82f6','Hybrid':'#a855f7','Gold':'#f59e0b','Cash':'#22d3ee','Other':'rgba(255,255,255,0.3)'};
 
-let S={inv:[],vals:[],sips:[],sett:structuredClone(DS),tab:'dashboard',drill:null,drillF:{year:'All',month:'All'},filters:{owner:'All',country:'All',category:'All',method:'All'},modal:null,edit:null,sTab:'general',mf:null,impM:'replace',lastOwner:'Self',lastCountry:'India',sortCol:'tot',sortDir:'desc',search:'',hide:false,pendingSips:[],sipF:{owner:'All',country:'All',status:'All'}};
+let S={inv:[],vals:[],sips:[],sett:structuredClone(DS),tab:'dashboard',drill:null,drillF:{year:'All',month:'All'},filters:{owner:'All',country:'All',category:'All',method:'All'},modal:null,edit:null,sTab:'general',mf:null,impM:'replace',lastOwner:'Self',lastCountry:'India',sortCol:'tot',sortDir:'desc',search:'',hide:false,pendingSips:[],sipF:{owner:'All',country:'All',status:'All'},jbKey:'',jbBin:'',gsyncing:false};
 
 function load(){try{const d=localStorage.getItem(SKEY);if(d)S.inv=JSON.parse(d);}catch{}try{const s=localStorage.getItem(KKEY);if(s){const p=JSON.parse(s);S.sett={...DS,...p,categories:{...DS.categories,...p.categories},funds:{...DS.funds,...p.funds},assetClass:{...DS.assetClass,...(p.assetClass||{})}};}}catch{}
 try{const v=localStorage.getItem(VKEY);if(v)S.vals=JSON.parse(v);}catch{}
 try{const p=localStorage.getItem(PKEY);if(p)S.sips=JSON.parse(p);}catch{}
+try{const g=localStorage.getItem(GKEY);if(g){const p=JSON.parse(g);S.jbKey=p.key||'';S.jbBin=p.bin||'';}}catch{}
 // Ensure Debt category exists + dedup all fund lists
 ['India','UK'].forEach(c=>{if(!S.sett.categories[c])S.sett.categories[c]=[];if(!S.sett.categories[c].includes('Debt'))S.sett.categories[c].push('Debt');const dk=`${c}::Debt`;if(!S.sett.funds[dk]||!S.sett.funds[dk].length)S.sett.funds[dk]=DS.funds[dk]||[];});
 Object.keys(S.sett.funds).forEach(k=>{S.sett.funds[k]=[...new Set(S.sett.funds[k])];});
@@ -348,6 +349,10 @@ document.addEventListener('click',e=>{
   else if(a==='b2s'){S.modal='settings';S.sTab='funds';R();}
   else if(a==='reset'){if(t.dataset.confirmed){S.inv=[];S.vals=[];S.sips=[];S.sett=structuredClone(DS);sI();sS();sV();sP();toast('Reset','i');closeM();}else{t.dataset.confirmed='1';t.innerHTML='⚠️ Tap again to confirm reset';t.style.borderColor='rgba(239,68,68,.6)';t.style.color='#fff';t.style.background='rgba(239,68,68,.15)';setTimeout(()=>{if(t){t.removeAttribute('data-confirmed');t.innerHTML='🗑 Reset All Data';t.style.borderColor='';t.style.color='';t.style.background='';}},3000);}}
   else if(a==='exp'){doExp();}
+  else if(a==='gsSave'){saveGUrl();}
+  else if(a==='gsTest'){gsTest();}
+  else if(a==='gsPush'){gsPush();}
+  else if(a==='gsPull'){gsPull();}
   else if(a==='theme'){toggleTheme();}
   else if(a==='hide'){toggleHide();}
   else if(a==='addSip'){S.modal='sipForm';S.edit=null;history.pushState({modal:true},'');R();}
@@ -583,7 +588,7 @@ function renderDash(){
     const pnl=totalCur-ga;
     const pnlPct=ga?((pnl/ga)*100).toFixed(1):0;
     const isUp=pnl>=0;
-    heroExtra=`<span class="hp">📊 Market: ${fmt(totalCur,'INR')}</span><span class="hp" style="background:${isUp?'rgba(16,185,129,.25)':'rgba(239,68,68,.25)'};color:${isUp?'#6ee7b7':'#fca5a5'}">P&L: ${isUp?'+':''}${fmt(pnl,'INR')} (${isUp?'+':''}${pnlPct}%)</span>`;
+    heroExtra=`<span class="hp">📊 Market: ${fmt(totalCur,'INR')}</span>${pnl!==0?`<span class="hp" style="background:${isUp?'rgba(16,185,129,.25)':'rgba(239,68,68,.25)'};color:${isUp?'#6ee7b7':'#fca5a5'}">P&L: ${isUp?'+':''}${fmt(pnl,'INR')} (${isUp?'+':''}${pnlPct}%)</span>`:''}`;
   }
 
   let o=`<div class="hero"><div class="hl">Net Worth (Invested)</div><div class="ha">${fmt(gt,'INR')}</div><div class="hpills"><span class="hp">📈 Assets: ${fmt(ga,'INR')}</span>${gd>0?`<span class="hp" style="background:rgba(239,68,68,.25);color:#fca5a5">📉 Debt: ${fmt(gd,'INR')}</span>`:''}<span class="hp">${S.inv.length} entries</span><span class="hp">1 GBP = ₹${rate}</span>${heroExtra}${lv?`<span class="hp">📊 As of: ${lv.date}</span>`:''}</div></div>`;
@@ -609,7 +614,8 @@ function renderDash(){
           const cur=country==='India'?'INR':'GBP';
           const cv=lv.values?.[k];
           if(cv===undefined)return null;
-          const diff=cv-inv;const pct=inv?((diff/inv)*100).toFixed(1):0;
+          const diff=cv-inv;if(diff===0)return null;
+          const pct=inv?((diff/inv)*100).toFixed(1):0;
           return{category,country,inv,cv,diff,pct,cur,up:diff>=0};
         }).filter(Boolean);
         if(catPnl.length){
@@ -715,11 +721,76 @@ function renderDrill(){
   o+=`</div></div>`;return o;
 }
 
+function saveGUrl(){
+  const key=document.getElementById('jbKey')?.value.trim();
+  const bin=document.getElementById('jbBin')?.value.trim();
+  if(key)S.jbKey=key;if(bin)S.jbBin=bin;
+  try{localStorage.setItem(GKEY,JSON.stringify({key:S.jbKey,bin:S.jbBin}));}catch{}
+  toast('Saved');R();
+}
+
+async function gsTest(){
+  if(!S.jbKey||!S.jbBin){toast('Enter API Key and Bin ID','e');return;}
+  S.gsyncing=true;R();
+  try{
+    const r=await fetch('https://api.jsonbin.io/v3/b/'+S.jbBin+'/latest',{headers:{'X-Master-Key':S.jbKey}});
+    if(r.ok){toast('✅ Connected!');}
+    else{const d=await r.json();toast('Error: '+(d.message||r.status),'e');}
+  }catch(err){toast('Failed: '+err.message,'e');}
+  S.gsyncing=false;R();
+}
+
+async function gsPush(){
+  if(!S.jbKey||!S.jbBin){toast('Enter API Key and Bin ID','e');return;}
+  if(!S.inv.length){toast('No investments to push','e');return;}
+  S.gsyncing=true;R();
+  try{
+    const payload={inv:S.inv,sips:S.sips,vals:S.vals,sett:S.sett,ts:Date.now()};
+    const r=await fetch('https://api.jsonbin.io/v3/b/'+S.jbBin,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json','X-Master-Key':S.jbKey},
+      body:JSON.stringify(payload)
+    });
+    if(r.ok){const d=await r.json();toast('✅ Pushed! '+S.inv.length+' investments synced');}
+    else{const d=await r.json();toast('Error: '+(d.message||r.status),'e');}
+  }catch(err){toast('Failed: '+err.message,'e');}
+  S.gsyncing=false;R();
+}
+
+async function gsPull(){
+  if(!S.jbKey||!S.jbBin){toast('Enter API Key and Bin ID','e');return;}
+  S.gsyncing=true;R();
+  try{
+    const r=await fetch('https://api.jsonbin.io/v3/b/'+S.jbBin+'/latest',{headers:{'X-Master-Key':S.jbKey}});
+    if(!r.ok){const d=await r.json();toast('Error: '+(d.message||r.status),'e');S.gsyncing=false;R();return;}
+    const d=await r.json();
+    const rec=d.record;
+    if(!rec||!rec.inv){toast('No data found in bin','e');S.gsyncing=false;R();return;}
+    S.inv=rec.inv;sI();
+    if(rec.sips){S.sips=rec.sips;sP();}
+    if(rec.vals){S.vals=rec.vals;sV();}
+    if(rec.sett){S.sett={...DS,...rec.sett,categories:{...DS.categories,...rec.sett.categories},funds:{...DS.funds,...rec.sett.funds},assetClass:{...DS.assetClass,...(rec.sett.assetClass||{})}};sS();}
+    ['India','UK'].forEach(c=>{if(!S.sett.categories[c])S.sett.categories[c]=[];if(!S.sett.categories[c].includes('Debt'))S.sett.categories[c].push('Debt');});
+    toast('✅ Pulled '+S.inv.length+' investments');
+  }catch(err){toast('Failed: '+err.message,'e');}
+  S.gsyncing=false;R();
+}
+
 function renderSync(){
-  let o=`<div class="card sync-c"><div class="cbd"><h3 style="font-size:16px;font-weight:700;margin-bottom:4px">📦 Full Backup</h3><p style="font-size:13px;color:var(--t40);margin-bottom:14px">Transfer all data between devices — investments + settings in one file</p>
+  const ready=!!S.jbKey&&!!S.jbBin;
+  let o=`<div class="card sync-c"><div class="cbd"><h3 style="font-size:16px;font-weight:700;margin-bottom:4px">☁️ Cloud Sync (JSONBin)</h3><p style="font-size:13px;color:var(--t40);margin-bottom:14px">Sync all data to the cloud for multi-device access</p>
+  <div style="margin-bottom:10px"><label class="fl">API Key</label><input class="fi" id="jbKey" value="${S.jbKey}" placeholder="Paste your JSONBin Master Key..." style="font-size:12px" type="password"></div>
+  <div style="margin-bottom:10px"><label class="fl">Bin ID</label><input class="fi" id="jbBin" value="${S.jbBin}" placeholder="Paste your Bin ID..." style="font-size:12px"></div>
+  <button class="bg bs" data-a="gsSave" style="width:100%;margin-bottom:12px">💾 Save Credentials</button>
+  ${ready?`<div style="display:flex;gap:8px;margin-bottom:8px"><button class="bg bs" data-a="gsTest" style="flex:1" ${S.gsyncing?'disabled':''}>${S.gsyncing?'⏳...':'🔗 Test'}</button></div>
+  <div style="display:flex;gap:10px"><button class="bp" style="flex:1" data-a="gsPush" ${S.gsyncing||!S.inv.length?'disabled':''}>${S.gsyncing?'⏳ Syncing...':'⬆ Push to Cloud'}</button><button class="bg" style="flex:1" data-a="gsPull" ${S.gsyncing?'disabled':''}>${S.gsyncing?'⏳...':'⬇ Pull from Cloud'}</button></div>
+  <p style="font-size:11px;color:var(--t25);margin-top:10px">Push uploads all data (investments, SIPs, valuations, settings). Pull replaces all local data.</p>`:'<p style="font-size:12px;color:var(--t25)">Enter your JSONBin API Key and Bin ID above to enable cloud sync.</p>'}
+  </div></div>
+
+  <div style="text-align:center;font-size:12px;font-weight:700;color:var(--t25);margin:16px 0;text-transform:uppercase;letter-spacing:1px">— Local Backup —</div>
+  <div class="card sync-c"><div class="cbd"><h3 style="font-size:16px;font-weight:700;margin-bottom:4px">📦 Full Backup</h3><p style="font-size:13px;color:var(--t40);margin-bottom:14px">Transfer all data between devices — investments + settings in one file</p>
   <div style="display:flex;gap:10px"><button class="bp" style="flex:1" data-a="jexp" ${S.inv.length===0?'disabled':''}>⬇ Download Backup</button><input type="file" id="jimpF" accept=".json" style="display:none"><button class="bg" style="flex:1" data-a="jimp">⬆ Restore Backup</button></div>
   </div></div>
-  <div class="ib" style="max-width:480px;margin:0 auto 16px"><h4>📱 How to Sync Between Devices</h4><p>1. On Device A — tap <b>Download Backup</b><br>2. Send the .json file via WhatsApp, Email, or AirDrop<br>3. On Device B — tap <b>Restore Backup</b> and select the file<br><br>This replaces all data on the target device with the backup.</p></div>
   <div style="text-align:center;font-size:12px;font-weight:700;color:var(--t25);margin:16px 0;text-transform:uppercase;letter-spacing:1px">— Excel Export / Import —</div>
   <div class="card sync-c"><div class="cbd"><h3 style="font-size:16px;font-weight:700;margin-bottom:4px">📥 Export Excel</h3><p style="font-size:13px;color:var(--t40);margin-bottom:14px">Download as .xlsx spreadsheet</p><button class="bp" style="width:100%" data-a="exp" ${S.inv.length===0?'disabled':''}>Export ${S.inv.length} Investments</button></div></div>
   <div class="card sync-c"><div class="cbd"><h3 style="font-size:16px;font-weight:700;margin-bottom:4px">📤 Import Excel</h3><p style="font-size:13px;color:var(--t40);margin-bottom:14px">Upload .xlsx to add or replace data</p>
