@@ -179,46 +179,46 @@ function migrateSips(){
 }
 function checkPendingSips(){
   S.pendingSips=[];
-  const today=new Date();const ty=today.getFullYear();const tm=today.getMonth();const todayTs=today.getTime();
+  const today=new Date();const ty=today.getFullYear();const tm=today.getMonth();const td=today.getDate();const todayTs=today.getTime();
+  const localDate=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   S.sips.filter(s=>s.status==='active').forEach(sip=>{
     const start=pD(sip.startDate)||new Date(2020,0,1);
     const freq=sip.freq||'monthly';
 
     if(freq==='weekly'){
-      // Iterate week by week from start, but limit to last 12 weeks for pending
-      let d=new Date(start);
-      const minDate=new Date(today);minDate.setDate(minDate.getDate()-84); // 12 weeks back
-      if(d<minDate)d=new Date(minDate);
+      let d=new Date(start.getFullYear(),start.getMonth(),start.getDate());
+      const minDate=new Date(ty,tm,td);minDate.setDate(minDate.getDate()-84);
+      if(d<minDate)d=new Date(minDate.getFullYear(),minDate.getMonth(),minDate.getDate());
       while(d.getTime()<=todayTs){
-        const wKey=d.toISOString().slice(0,10);
-        const wStart=new Date(d);const wEnd=new Date(d);wEnd.setDate(wEnd.getDate()+6);
+        const wKey=localDate(d);
+        const wEnd=new Date(d.getFullYear(),d.getMonth(),d.getDate()+6);
         const skipped=sip.skipped&&sip.skipped.includes(wKey);
         const exists=S.inv.some(i=>{
           if(i.fundName!==sip.fundName||i.owner!==sip.owner||i.category!==sip.category||i.country!==sip.country||i.method!=='SIP')return false;
+          if(i._sipId===sip.id&&i._sipMonth===wKey)return true;
           const id=pD(i.date);if(!id)return false;
-          return id>=wStart&&id<=wEnd;
+          return id>=d&&id<=wEnd;
         });
         if(!exists&&!skipped){
           const wNum=Math.ceil(d.getDate()/7);
           S.pendingSips.push({sip,year:d.getFullYear(),month:d.getMonth(),week:wNum,mKey:wKey});
         }
-        d.setDate(d.getDate()+7);
+        d=new Date(d.getFullYear(),d.getMonth(),d.getDate()+7);
       }
     }else{
-      // Monthly
       let y=start.getFullYear(),m=start.getMonth();
       while(y<ty||(y===ty&&m<=tm)){
         const mKey=`${y}-${String(m+1).padStart(2,'0')}`;
         const skipped=sip.skipped&&sip.skipped.includes(mKey);
         const exists=S.inv.some(i=>{
           if(i.fundName!==sip.fundName||i.owner!==sip.owner||i.category!==sip.category||i.country!==sip.country||i.method!=='SIP')return false;
+          if(i._sipId===sip.id&&i._sipMonth===mKey)return true;
           const d=pD(i.date);if(!d)return false;
           const ik=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
           return ik===mKey;
         });
         if(!exists&&!skipped&&(y>start.getFullYear()||m>=start.getMonth())){
-          // For current month, only show after SIP day has passed
-          if(y===ty&&m===tm&&today.getDate()<sip.sipDay){}
+          if(y===ty&&m===tm&&td<sip.sipDay){}
           else{S.pendingSips.push({sip,year:y,month:m,mKey});}
         }
         m++;if(m>11){m=0;y++;}
@@ -259,6 +259,12 @@ function latestVal(){return S.vals.length?S.vals[S.vals.length-1]:null;}
 function getInvested(){
   const m={};
   S.inv.forEach(i=>{if(isDebt(i.category))return;const k=`${i.owner}::${i.country}::${i.category}`;m[k]=(m[k]||0)+i.amount;});
+  return m;
+}
+function getInvestedAsOf(asOfDate){
+  const m={};
+  const cutoff=pD(asOfDate);
+  S.inv.forEach(i=>{if(isDebt(i.category))return;const d=pD(i.date);if(!d||!cutoff||d>cutoff)return;const k=`${i.owner}::${i.country}::${i.category}`;m[k]=(m[k]||0)+i.amount;});
   return m;
 }
 
@@ -317,7 +323,7 @@ document.addEventListener('click',e=>{
   e.preventDefault(); e.stopPropagation();
 
   if(a==='goHome'){if(S.drill){S.drill=null;}else{S.tab='dashboard';S.filters={owner:'All',country:'All',category:'All',method:'All'};S.search='';}R();}
-  else if(a==='tab'){S.tab=t.dataset.v;S.drill=null;S.search='';history.pushState({tab:S.tab},'');R();}
+  else if(a==='tab'){S.tab=t.dataset.v;S.drill=null;S.search='';if(t.dataset.v==='sips')checkPendingSips();history.pushState({tab:S.tab},'');R();}
   else if(a==='piecat'){const cat=t.dataset.v;const ow=t.dataset.ow||'All';S.tab='portfolio';S.drill=null;S.filters={owner:ow,country:'All',category:cat,method:'All'};S.search='';history.pushState({tab:'portfolio',from:'dashboard'},'');toast('Filtered: '+ow+' · '+cat,'i');R();}
   else if(a==='sett'){S.modal='settings';S.sTab='general';history.pushState({modal:true},'');R();}
   else if(a==='add'){S.edit=null;S.modal='form';history.pushState({modal:true},'');R();}
@@ -582,13 +588,13 @@ function renderDash(){
   let heroExtra='';
   if(lv){
     const invested=getInvested();
-    let totalCur=0;
-    Object.keys(invested).forEach(k=>{const[,country]=k.split('::');const cur=country==='India'?'INR':'GBP';totalCur+=ti(lv.values?.[k]??invested[k],cur);});
-    const marketNet=totalCur-gd;
-    const pnl=totalCur-ga;
-    const pnlPct=ga?((pnl/ga)*100).toFixed(1):0;
+    const investedAtVal=getInvestedAsOf(lv.date);
+    let totalCur=0,totalInvAtVal=0;
+    Object.keys(invested).forEach(k=>{const[,country]=k.split('::');const cur=country==='India'?'INR':'GBP';totalCur+=ti(lv.values?.[k]??invested[k],cur);totalInvAtVal+=ti(investedAtVal[k]||0,cur);});
+    const pnl=totalCur-totalInvAtVal;
+    const pnlPct=totalInvAtVal?((pnl/totalInvAtVal)*100).toFixed(1):0;
     const isUp=pnl>=0;
-    heroExtra=`<span class="hp">📊 Market: ${fmt(totalCur,'INR')}</span>${pnl!==0?`<span class="hp" style="background:${isUp?'rgba(16,185,129,.25)':'rgba(239,68,68,.25)'};color:${isUp?'#6ee7b7':'#fca5a5'}">P&L: ${isUp?'+':''}${fmt(pnl,'INR')} (${isUp?'+':''}${pnlPct}%)</span>`:''}`;
+    heroExtra=`<span class="hp">📊 Market: ${fmt(totalCur,'INR')}</span>${pnl!==0&&totalInvAtVal>0?`<span class="hp" style="background:${isUp?'rgba(16,185,129,.25)':'rgba(239,68,68,.25)'};color:${isUp?'#6ee7b7':'#fca5a5'}">P&L: ${isUp?'+':''}${fmt(pnl,'INR')} (${isUp?'+':''}${pnlPct}%)</span>`:''}`;
   }
 
   let o=`<div class="hero"><div class="hl">Net Worth (Invested)</div><div class="ha">${fmt(gt,'INR')}</div><div class="hpills"><span class="hp">📈 Assets: ${fmt(ga,'INR')}</span>${gd>0?`<span class="hp" style="background:rgba(239,68,68,.25);color:#fca5a5">📉 Debt: ${fmt(gd,'INR')}</span>`:''}<span class="hp">${S.inv.length} entries</span><span class="hp">1 GBP = ₹${rate}</span>${heroExtra}${lv?`<span class="hp">📊 As of: ${lv.date}</span>`:''}</div></div>`;
@@ -609,14 +615,17 @@ function renderDash(){
       o+=`<div class="cbd" style="border-bottom:${dd.length?'1px solid var(--brd)':'none'}"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--green);margin-bottom:10px">Assets by Category</div><div style="display:flex;align-items:center;gap:16px"><div style="flex-shrink:0;width:140px">${svgPie(cd,ow)}</div><div style="flex:1;min-width:0;overflow-y:auto;max-height:180px">${pieLegend(cd,ow)}</div></div>`;
       // Show P&L per category if valuation exists
       if(lv){
+        const catInvAtVal=getInvestedAsOf(lv.date);
         const catPnl=Object.entries(d.catKey).map(([k,inv])=>{
           const[,country,category]=k.split('::');
           const cur=country==='India'?'INR':'GBP';
           const cv=lv.values?.[k];
           if(cv===undefined)return null;
-          const diff=cv-inv;if(diff===0)return null;
-          const pct=inv?((diff/inv)*100).toFixed(1):0;
-          return{category,country,inv,cv,diff,pct,cur,up:diff>=0};
+          const invAtVal=catInvAtVal[k]||0;
+          if(invAtVal===0)return null;
+          const diff=cv-invAtVal;if(diff===0)return null;
+          const pct=invAtVal?((diff/invAtVal)*100).toFixed(1):0;
+          return{category,country,inv:invAtVal,cv,diff,pct,cur,up:diff>=0};
         }).filter(Boolean);
         if(catPnl.length){
           o+=`<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--brd)"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t25);margin-bottom:6px">P&L by Category · ${lv.date}</div>`;
@@ -844,7 +853,6 @@ function renderValuations(){
 
 function renderValHistory(){
   if(!S.vals.length)return`<div class="empty" style="padding:30px"><p>No snapshots yet. Update values from the dashboard to create your first snapshot.</p></div><div style="margin-top:16px"><button class="bg" style="width:100%" data-a="openVals">← Update Values</button></div>`;
-  const invested=getInvested();
   const rate=S.sett.exchangeRate||110;
   const ti=(a,c)=>c==='GBP'?a*rate:a;
   let o=`<p style="font-size:13px;color:var(--t40);margin-bottom:14px">${S.vals.length} snapshot${S.vals.length!==1?'s':''} recorded</p>`;
@@ -853,6 +861,7 @@ function renderValHistory(){
   const sorted=[...S.vals].reverse();
   sorted.forEach((snap,ri)=>{
     const idx=S.vals.length-1-ri;
+    const invested=getInvestedAsOf(snap.date);
     const keys=Object.keys(snap.values).sort();
     let totalInv=0,totalCur=0;
     keys.forEach(k=>{const[,country]=k.split('::');const cur=country==='India'?'INR':'GBP';totalInv+=ti(invested[k]||0,cur);totalCur+=ti(snap.values[k]||0,cur);});
@@ -899,24 +908,25 @@ function confirmPendingSip(sipId,mKey){
   const freq=sip.freq||'monthly';
   let date;
   if(freq==='weekly'){
-    date=mKey; // mKey is already YYYY-MM-DD for weekly
+    date=mKey;
   }else{
     const[y,m]=mKey.split('-').map(Number);
     date=`${y}-${String(m).padStart(2,'0')}-${String(sip.sipDay).padStart(2,'0')}`;
   }
   S.inv.push({id:uid(),owner:sip.owner,country:sip.country,category:sip.category,fundName:sip.fundName,method:'SIP',amount:sip.amount,currency:sip.currency,date,notes:'Auto from SIP',qty:null,buyPrice:null,_sipId:sipId,_sipMonth:mKey,_ts:Date.now()});
+  S.pendingSips=S.pendingSips.filter(p=>!(p.sip.id===sipId&&p.mKey===mKey));
   const label=freq==='weekly'?date:`${MOS[Number(mKey.split('-')[1])-1]} ${mKey.split('-')[0]}`;
-  sI();checkPendingSips();toast('Added '+label);R();
+  sI();toast('Added '+label);R();
 }
 function skipPendingSip(sipId,mKey){
   const sip=S.sips.find(s=>s.id===sipId);if(!sip)return;
   if(!sip.skipped)sip.skipped=[];
   sip.skipped.push(mKey);
-  sP();checkPendingSips();toast('Skipped','i');R();
+  S.pendingSips=S.pendingSips.filter(p=>!(p.sip.id===sipId&&p.mKey===mKey));
+  sP();toast('Skipped','i');R();
 }
 
 function renderSips(){
-  checkPendingSips();
   let o='';
   // Pending SIPs banner
   if(S.pendingSips.length){
