@@ -569,7 +569,7 @@ function R(){
 
 function renderHdr(){
   const showBack=S.tab!=='dashboard'||S.drill;
-  return`<header class="hdr"><div class="hdr-in"><div class="logo">${showBack?'<button class="ibtn" data-a="goHome" style="margin-right:4px;font-size:18px">←</button>':''}<div class="logo-i">W</div><div><h1>WealthView</h1><p>Investment Tracker · v2.4</p></div></div><div style="display:flex;gap:6px"><button class="ibtn" data-a="hide" title="Toggle amounts">${S.hide?'🙈':'👁️'}</button><button class="ibtn" data-a="sett">⚙️</button></div></div>
+  return`<header class="hdr"><div class="hdr-in"><div class="logo">${showBack?'<button class="ibtn" data-a="goHome" style="margin-right:4px;font-size:18px">←</button>':''}<div class="logo-i">W</div><div><h1>WealthView</h1><p>Investment Tracker · v2.5</p></div></div><div style="display:flex;gap:6px"><button class="ibtn" data-a="hide" title="Toggle amounts">${S.hide?'🙈':'👁️'}</button><button class="ibtn" data-a="sett">⚙️</button></div></div>
   <div class="tabs">${['dashboard','portfolio','sips','sync'].map(t=>{const ic={dashboard:'📊',portfolio:'💼',sips:'🔁',sync:'🔄'};const lb={dashboard:'Dashboard',portfolio:'Portfolio',sips:'SIPs',sync:'Sync'};return`<button class="tbtn ${S.tab===t?'on':''}" data-a="tab" data-v="${t}">${ic[t]} <span class="tl">${lb[t]}</span></button>`;}).join('')}</div></header>`;
 }
 
@@ -754,13 +754,19 @@ async function gsPush(){
   if(!S.inv.length){toast('No investments to push','e');return;}
   S.gsyncing=true;R();
   try{
-    const payload={inv:S.inv,sips:S.sips,vals:S.vals,sett:S.sett,ts:Date.now()};
+    // Strip internal/null fields to reduce size
+    const trimInv=S.inv.map(i=>{const o={id:i.id,ow:i.owner,co:i.country,ca:i.category,fn:i.fundName,me:i.method,am:i.amount,cu:i.currency,dt:i.date};if(i.notes)o.no=i.notes;if(i.qty)o.qt=i.qty;if(i.buyPrice)o.bp=i.buyPrice;return o;});
+    const trimSips=S.sips.map(s=>{const o={id:s.id,ow:s.owner,co:s.country,ca:s.category,fn:s.fundName,am:s.amount,cu:s.currency,sd:s.sipDay,fr:s.freq||'monthly',st:s.status,sd2:s.startDate};if(s.skipped&&s.skipped.length)o.sk=s.skipped;return o;});
+    const payload={v:4,inv:trimInv,sips:trimSips,vals:S.vals,sett:S.sett,ts:Date.now()};
+    const json=JSON.stringify(payload);
+    const kb=(json.length/1024).toFixed(1);
+    if(json.length>100000){toast('Data too large ('+kb+'KB). Remove old snapshots to reduce size.','e');S.gsyncing=false;R();return;}
     const r=await fetch('https://api.jsonbin.io/v3/b/'+S.jbBin,{
       method:'PUT',
       headers:{'Content-Type':'application/json','X-Master-Key':S.jbKey},
-      body:JSON.stringify(payload)
+      body:json
     });
-    if(r.ok){const d=await r.json();toast('✅ Pushed! '+S.inv.length+' investments synced');}
+    if(r.ok){toast('✅ Pushed! '+S.inv.length+' investments ('+kb+'KB)');}
     else{const d=await r.json();toast('Error: '+(d.message||r.status),'e');}
   }catch(err){toast('Failed: '+err.message,'e');}
   S.gsyncing=false;R();
@@ -775,8 +781,16 @@ async function gsPull(){
     const d=await r.json();
     const rec=d.record;
     if(!rec||!rec.inv){toast('No data found in bin','e');S.gsyncing=false;R();return;}
-    S.inv=rec.inv;sI();
-    if(rec.sips){S.sips=rec.sips;sP();}
+    // Handle compressed format (v4) or full format
+    if(rec.v>=4){
+      S.inv=rec.inv.map(i=>({id:i.id,owner:i.ow,country:i.co,category:i.ca,fundName:i.fn,method:i.me,amount:i.am,currency:i.cu,date:i.dt,notes:i.no||'',qty:i.qt||null,buyPrice:i.bp||null}));
+      if(rec.sips)S.sips=rec.sips.map(s=>({id:s.id,owner:s.ow,country:s.co,category:s.ca,fundName:s.fn,amount:s.am,currency:s.cu,sipDay:s.sd,freq:s.fr||'monthly',status:s.st,startDate:s.sd2,skipped:s.sk||[]}));
+    }else{
+      S.inv=rec.inv;
+      if(rec.sips)S.sips=rec.sips;
+    }
+    sI();
+    if(rec.sips)sP();
     if(rec.vals){S.vals=rec.vals;sV();}
     if(rec.sett){S.sett={...DS,...rec.sett,categories:{...DS.categories,...rec.sett.categories},funds:{...DS.funds,...rec.sett.funds},assetClass:{...DS.assetClass,...(rec.sett.assetClass||{})}};sS();}
     ['India','UK'].forEach(c=>{if(!S.sett.categories[c])S.sett.categories[c]=[];if(!S.sett.categories[c].includes('Debt'))S.sett.categories[c].push('Debt');});
