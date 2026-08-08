@@ -154,12 +154,12 @@ MOS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
 DS={exchangeRate:110,categories:{India:['Mutual Funds','Stocks','SGB','Govt Bonds','Corporate Bonds','RBI Gilt','ETFs','FD','RD','Debt'],UK:['Bank Savings','ISA - Cash','ISA - Stocks & Investments','Pension Account','Debt']},methods:['SIP','One-Time','Lumpsum','EMI'],funds:{'India::Debt':['Personal Loan','Home Loan / Mortgage','Car Loan','Education Loan','Credit Card','Gold Loan','Other Loan'],'UK::Debt':['Mortgage','Personal Loan','Car Finance','Student Loan','Credit Card','Other Loan']},assetClass:{}};
 const AC=['Equity','Debt','Hybrid','Gold','Cash','Other'],ACC={'Equity':'#10b981','Debt':'#3b82f6','Hybrid':'#a855f7','Gold':'#f59e0b','Cash':'#22d3ee','Other':'rgba(255,255,255,0.3)'};
 
-let S={inv:[],vals:[],sips:[],sett:structuredClone(DS),tab:'dashboard',drill:null,drillF:{year:'All',month:'All'},filters:{owner:'All',country:'All',category:'All',method:'All'},modal:null,edit:null,sTab:'general',mf:null,impM:'replace',lastOwner:'Self',lastCountry:'India',sortCol:'tot',sortDir:'desc',search:'',hide:false,pendingSips:[],sipF:{owner:'All',country:'All',status:'All'},jbKey:'',jbBin:'',gsyncing:false};
+let S={inv:[],vals:[],sips:[],sett:structuredClone(DS),tab:'dashboard',drill:null,drillF:{year:'All',month:'All'},filters:{owner:'All',country:'All',category:'All',method:'All'},modal:null,edit:null,sTab:'general',mf:null,impM:'replace',lastOwner:'Self',lastCountry:'India',sortCol:'tot',sortDir:'desc',search:'',hide:false,pendingSips:[],sipF:{owner:'All',country:'All',status:'All'},sbUrl:'',sbKey:'',gsyncing:false};
 
 function load(){try{const d=localStorage.getItem(SKEY);if(d)S.inv=JSON.parse(d);}catch{}try{const s=localStorage.getItem(KKEY);if(s){const p=JSON.parse(s);S.sett={...DS,...p,categories:{...DS.categories,...p.categories},funds:{...DS.funds,...p.funds},assetClass:{...DS.assetClass,...(p.assetClass||{})}};}}catch{}
 try{const v=localStorage.getItem(VKEY);if(v)S.vals=JSON.parse(v);}catch{}
 try{const p=localStorage.getItem(PKEY);if(p)S.sips=JSON.parse(p);}catch{}
-try{const g=localStorage.getItem(GKEY);if(g){const p=JSON.parse(g);S.jbKey=p.key||'';S.jbBin=p.bin||'';}}catch{}
+try{const g=localStorage.getItem(GKEY);if(g){const p=JSON.parse(g);S.sbUrl=p.url||'';S.sbKey=p.key||'';}}catch{}
 // Ensure Debt category exists + dedup all fund lists
 ['India','UK'].forEach(c=>{if(!S.sett.categories[c])S.sett.categories[c]=[];if(!S.sett.categories[c].includes('Debt'))S.sett.categories[c].push('Debt');const dk=`${c}::Debt`;if(!S.sett.funds[dk]||!S.sett.funds[dk].length)S.sett.funds[dk]=DS.funds[dk]||[];});
 Object.keys(S.sett.funds).forEach(k=>{S.sett.funds[k]=[...new Set(S.sett.funds[k])];});
@@ -200,8 +200,13 @@ function checkPendingSips(){
           return id>=d&&id<=wEnd;
         });
         if(!exists&&!skipped){
-          const wNum=Math.ceil(d.getDate()/7);
-          S.pendingSips.push({sip,year:d.getFullYear(),month:d.getMonth(),week:wNum,mKey:wKey});
+          // For current week, only show after the SIP day of week has passed
+          const wContainsToday=today>=d&&today<=wEnd;
+          if(wContainsToday&&today.getDay()<sip.sipDay){}
+          else{
+            const wNum=Math.ceil(d.getDate()/7);
+            S.pendingSips.push({sip,year:d.getFullYear(),month:d.getMonth(),week:wNum,mKey:wKey});
+          }
         }
         d=new Date(d.getFullYear(),d.getMonth(),d.getDate()+7);
       }
@@ -569,7 +574,7 @@ function R(){
 
 function renderHdr(){
   const showBack=S.tab!=='dashboard'||S.drill;
-  return`<header class="hdr"><div class="hdr-in"><div class="logo">${showBack?'<button class="ibtn" data-a="goHome" style="margin-right:4px;font-size:18px">←</button>':''}<div class="logo-i">W</div><div><h1>WealthView</h1><p>Investment Tracker · v2.5</p></div></div><div style="display:flex;gap:6px"><button class="ibtn" data-a="hide" title="Toggle amounts">${S.hide?'🙈':'👁️'}</button><button class="ibtn" data-a="sett">⚙️</button></div></div>
+  return`<header class="hdr"><div class="hdr-in"><div class="logo">${showBack?'<button class="ibtn" data-a="goHome" style="margin-right:4px;font-size:18px">←</button>':''}<div class="logo-i">W</div><div><h1>WealthView</h1><p>Investment Tracker · v2.6</p></div></div><div style="display:flex;gap:6px"><button class="ibtn" data-a="hide" title="Toggle amounts">${S.hide?'🙈':'👁️'}</button><button class="ibtn" data-a="sett">⚙️</button></div></div>
   <div class="tabs">${['dashboard','portfolio','sips','sync'].map(t=>{const ic={dashboard:'📊',portfolio:'💼',sips:'🔁',sync:'🔄'};const lb={dashboard:'Dashboard',portfolio:'Portfolio',sips:'SIPs',sync:'Sync'};return`<button class="tbtn ${S.tab===t?'on':''}" data-a="tab" data-v="${t}">${ic[t]} <span class="tl">${lb[t]}</span></button>`;}).join('')}</div></header>`;
 }
 
@@ -731,83 +736,70 @@ function renderDrill(){
 }
 
 function saveGUrl(){
-  const key=document.getElementById('jbKey')?.value.trim();
-  const bin=document.getElementById('jbBin')?.value.trim();
-  if(key)S.jbKey=key;if(bin)S.jbBin=bin;
-  try{localStorage.setItem(GKEY,JSON.stringify({key:S.jbKey,bin:S.jbBin}));}catch{}
+  const url=document.getElementById('sbUrl')?.value.trim();
+  const key=document.getElementById('sbKey')?.value.trim();
+  if(url)S.sbUrl=url;if(key)S.sbKey=key;
+  try{localStorage.setItem(GKEY,JSON.stringify({url:S.sbUrl,key:S.sbKey}));}catch{}
   toast('Saved');R();
 }
 
 async function gsTest(){
-  if(!S.jbKey||!S.jbBin){toast('Enter API Key and Bin ID','e');return;}
+  if(!S.sbUrl||!S.sbKey){toast('Enter URL and Key','e');return;}
   S.gsyncing=true;R();
   try{
-    const r=await fetch('https://api.jsonbin.io/v3/b/'+S.jbBin+'/latest',{headers:{'X-Master-Key':S.jbKey}});
-    if(r.ok){toast('✅ Connected!');}
-    else{const d=await r.json();toast('Error: '+(d.message||r.status),'e');}
+    const r=await fetch(S.sbUrl+'/rest/v1/wealthview_sync?id=eq.default&select=updated_at',{headers:{'apikey':S.sbKey,'Authorization':'Bearer '+S.sbKey}});
+    if(r.ok){toast('✅ Connected to Supabase!');}
+    else{toast('Error: '+r.status,'e');}
   }catch(err){toast('Failed: '+err.message,'e');}
   S.gsyncing=false;R();
 }
 
 async function gsPush(){
-  if(!S.jbKey||!S.jbBin){toast('Enter API Key and Bin ID','e');return;}
+  if(!S.sbUrl||!S.sbKey){toast('Enter URL and Key','e');return;}
   if(!S.inv.length){toast('No investments to push','e');return;}
   S.gsyncing=true;R();
   try{
-    // Strip internal/null fields to reduce size
-    const trimInv=S.inv.map(i=>{const o={id:i.id,ow:i.owner,co:i.country,ca:i.category,fn:i.fundName,me:i.method,am:i.amount,cu:i.currency,dt:i.date};if(i.notes)o.no=i.notes;if(i.qty)o.qt=i.qty;if(i.buyPrice)o.bp=i.buyPrice;return o;});
-    const trimSips=S.sips.map(s=>{const o={id:s.id,ow:s.owner,co:s.country,ca:s.category,fn:s.fundName,am:s.amount,cu:s.currency,sd:s.sipDay,fr:s.freq||'monthly',st:s.status,sd2:s.startDate};if(s.skipped&&s.skipped.length)o.sk=s.skipped;return o;});
-    const payload={v:4,inv:trimInv,sips:trimSips,vals:S.vals,sett:S.sett,ts:Date.now()};
-    const json=JSON.stringify(payload);
-    const kb=(json.length/1024).toFixed(1);
-    if(json.length>100000){toast('Data too large ('+kb+'KB). Remove old snapshots to reduce size.','e');S.gsyncing=false;R();return;}
-    const r=await fetch('https://api.jsonbin.io/v3/b/'+S.jbBin,{
-      method:'PUT',
-      headers:{'Content-Type':'application/json','X-Master-Key':S.jbKey},
-      body:json
+    const payload={inv:S.inv,sips:S.sips,vals:S.vals,sett:S.sett,ts:Date.now()};
+    const body={id:'default',data:payload,updated_at:new Date().toISOString()};
+    const r=await fetch(S.sbUrl+'/rest/v1/wealthview_sync',{
+      method:'POST',
+      headers:{'apikey':S.sbKey,'Authorization':'Bearer '+S.sbKey,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
+      body:JSON.stringify(body)
     });
-    if(r.ok){toast('✅ Pushed! '+S.inv.length+' investments ('+kb+'KB)');}
+    if(r.ok||r.status===201||r.status===204){toast('✅ Pushed '+S.inv.length+' investments to Supabase');}
     else{const d=await r.json();toast('Error: '+(d.message||r.status),'e');}
   }catch(err){toast('Failed: '+err.message,'e');}
   S.gsyncing=false;R();
 }
 
 async function gsPull(){
-  if(!S.jbKey||!S.jbBin){toast('Enter API Key and Bin ID','e');return;}
+  if(!S.sbUrl||!S.sbKey){toast('Enter URL and Key','e');return;}
   S.gsyncing=true;R();
   try{
-    const r=await fetch('https://api.jsonbin.io/v3/b/'+S.jbBin+'/latest',{headers:{'X-Master-Key':S.jbKey}});
-    if(!r.ok){const d=await r.json();toast('Error: '+(d.message||r.status),'e');S.gsyncing=false;R();return;}
-    const d=await r.json();
-    const rec=d.record;
-    if(!rec||!rec.inv){toast('No data found in bin','e');S.gsyncing=false;R();return;}
-    // Handle compressed format (v4) or full format
-    if(rec.v>=4){
-      S.inv=rec.inv.map(i=>({id:i.id,owner:i.ow,country:i.co,category:i.ca,fundName:i.fn,method:i.me,amount:i.am,currency:i.cu,date:i.dt,notes:i.no||'',qty:i.qt||null,buyPrice:i.bp||null}));
-      if(rec.sips)S.sips=rec.sips.map(s=>({id:s.id,owner:s.ow,country:s.co,category:s.ca,fundName:s.fn,amount:s.am,currency:s.cu,sipDay:s.sd,freq:s.fr||'monthly',status:s.st,startDate:s.sd2,skipped:s.sk||[]}));
-    }else{
-      S.inv=rec.inv;
-      if(rec.sips)S.sips=rec.sips;
-    }
-    sI();
-    if(rec.sips)sP();
+    const r=await fetch(S.sbUrl+'/rest/v1/wealthview_sync?id=eq.default',{headers:{'apikey':S.sbKey,'Authorization':'Bearer '+S.sbKey}});
+    if(!r.ok){toast('Error: '+r.status,'e');S.gsyncing=false;R();return;}
+    const rows=await r.json();
+    if(!rows.length||!rows[0].data){toast('No data found. Push first.','e');S.gsyncing=false;R();return;}
+    const rec=rows[0].data;
+    if(rec.inv){S.inv=rec.inv;sI();}
+    if(rec.sips){S.sips=rec.sips;sP();}
     if(rec.vals){S.vals=rec.vals;sV();}
     if(rec.sett){S.sett={...DS,...rec.sett,categories:{...DS.categories,...rec.sett.categories},funds:{...DS.funds,...rec.sett.funds},assetClass:{...DS.assetClass,...(rec.sett.assetClass||{})}};sS();}
     ['India','UK'].forEach(c=>{if(!S.sett.categories[c])S.sett.categories[c]=[];if(!S.sett.categories[c].includes('Debt'))S.sett.categories[c].push('Debt');});
-    toast('✅ Pulled '+S.inv.length+' investments');
+    toast('✅ Pulled '+S.inv.length+' investments from Supabase');
   }catch(err){toast('Failed: '+err.message,'e');}
   S.gsyncing=false;R();
 }
 
 function renderSync(){
-  const ready=!!S.jbKey&&!!S.jbBin;
-  let o=`<div class="card sync-c"><div class="cbd"><h3 style="font-size:16px;font-weight:700;margin-bottom:4px">☁️ Cloud Sync (JSONBin)</h3><p style="font-size:13px;color:var(--t40);margin-bottom:14px">Sync all data to the cloud for multi-device access</p>
-  <div style="margin-bottom:10px"><label class="fl">API Key</label><input class="fi" id="jbKey" value="${S.jbKey}" placeholder="Paste your JSONBin Master Key..." style="font-size:12px" type="password"></div>
-  <div style="margin-bottom:10px"><label class="fl">Bin ID</label><input class="fi" id="jbBin" value="${S.jbBin}" placeholder="Paste your Bin ID..." style="font-size:12px"></div>
+  const ready=!!S.sbUrl&&!!S.sbKey;
+  let o=`<div class="card sync-c"><div class="cbd"><h3 style="font-size:16px;font-weight:700;margin-bottom:4px">☁️ Cloud Sync (Supabase)</h3><p style="font-size:13px;color:var(--t40);margin-bottom:14px">Sync all data to Supabase for multi-device access</p>
+  <div style="margin-bottom:10px"><label class="fl">Project URL</label><input class="fi" id="sbUrl" value="${S.sbUrl}" placeholder="https://xxxxx.supabase.co" style="font-size:12px"></div>
+  <div style="margin-bottom:10px"><label class="fl">Anon Key</label><input class="fi" id="sbKey" value="${S.sbKey}" placeholder="Paste your anon public key..." style="font-size:12px" type="password"></div>
   <button class="bg bs" data-a="gsSave" style="width:100%;margin-bottom:12px">💾 Save Credentials</button>
   ${ready?`<div style="display:flex;gap:8px;margin-bottom:8px"><button class="bg bs" data-a="gsTest" style="flex:1" ${S.gsyncing?'disabled':''}>${S.gsyncing?'⏳...':'🔗 Test'}</button></div>
   <div style="display:flex;gap:10px"><button class="bp" style="flex:1" data-a="gsPush" ${S.gsyncing||!S.inv.length?'disabled':''}>${S.gsyncing?'⏳ Syncing...':'⬆ Push to Cloud'}</button><button class="bg" style="flex:1" data-a="gsPull" ${S.gsyncing?'disabled':''}>${S.gsyncing?'⏳...':'⬇ Pull from Cloud'}</button></div>
-  <p style="font-size:11px;color:var(--t25);margin-top:10px">Push uploads all data (investments, SIPs, valuations, settings). Pull replaces all local data.</p>`:'<p style="font-size:12px;color:var(--t25)">Enter your JSONBin API Key and Bin ID above to enable cloud sync.</p>'}
+  <p style="font-size:11px;color:var(--t25);margin-top:10px">Push uploads all data (investments, SIPs, valuations, settings). Pull replaces all local data. No size limits.</p>`:'<p style="font-size:12px;color:var(--t25)">Enter your Supabase Project URL and anon key to enable cloud sync.</p>'}
   </div></div>
 
   <div style="text-align:center;font-size:12px;font-weight:700;color:var(--t25);margin:16px 0;text-transform:uppercase;letter-spacing:1px">— Local Backup —</div>
