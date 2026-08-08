@@ -200,9 +200,12 @@ function checkPendingSips(){
           return id>=d&&id<=wEnd;
         });
         if(!exists&&!skipped){
-          // For current week, only show after the SIP day of week has passed
-          const wContainsToday=today>=d&&today<=wEnd;
-          if(wContainsToday&&today.getDay()<sip.sipDay){}
+          // Calculate actual SIP date within this week
+          const dDay=d.getDay();
+          const sipDayOffset=((sip.sipDay-dDay)+7)%7;
+          const sipDateInWeek=new Date(d.getFullYear(),d.getMonth(),d.getDate()+sipDayOffset);
+          // Only show if SIP date has passed
+          if(sipDateInWeek>today){}
           else{
             const wNum=Math.ceil(d.getDate()/7);
             S.pendingSips.push({sip,year:d.getFullYear(),month:d.getMonth(),week:wNum,mKey:wKey});
