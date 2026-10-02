@@ -188,7 +188,13 @@ function checkPendingSips(){
     if(freq==='weekly'){
       let d=new Date(start.getFullYear(),start.getMonth(),start.getDate());
       const minDate=new Date(ty,tm,td);minDate.setDate(minDate.getDate()-84);
-      if(d<minDate)d=new Date(minDate.getFullYear(),minDate.getMonth(),minDate.getDate());
+      // Align to weekly cadence from original start date
+      if(d<minDate){
+        const daysDiff=Math.floor((minDate.getTime()-d.getTime())/86400000);
+        const weeksToSkip=Math.floor(daysDiff/7);
+        d=new Date(d.getFullYear(),d.getMonth(),d.getDate()+weeksToSkip*7);
+        if(d<minDate)d=new Date(d.getFullYear(),d.getMonth(),d.getDate()+7);
+      }
       while(d.getTime()<=todayTs){
         const wKey=localDate(d);
         const wEnd=new Date(d.getFullYear(),d.getMonth(),d.getDate()+6);
@@ -917,7 +923,14 @@ function confirmPendingSip(sipId,mKey){
   const freq=sip.freq||'monthly';
   let date;
   if(freq==='weekly'){
-    date=mKey;
+    // Calculate actual SIP day date within this week
+    const wStart=pD(mKey);
+    if(wStart){
+      const dDay=wStart.getDay();
+      const off=((sip.sipDay-dDay)+7)%7;
+      const sipD=new Date(wStart.getFullYear(),wStart.getMonth(),wStart.getDate()+off);
+      date=`${sipD.getFullYear()}-${String(sipD.getMonth()+1).padStart(2,'0')}-${String(sipD.getDate()).padStart(2,'0')}`;
+    }else{date=mKey;}
   }else{
     const[y,m]=mKey.split('-').map(Number);
     date=`${y}-${String(m).padStart(2,'0')}-${String(sip.sipDay).padStart(2,'0')}`;
